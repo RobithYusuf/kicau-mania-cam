@@ -7,7 +7,7 @@
 #   linux:  apt install yt-dlp ffmpeg
 set -euo pipefail
 
-cd "$(dirname "$0")/audio"
+cd "$(dirname "$0")/../public/audio"
 
 if [ -f "kicau-mania.mp3" ]; then
   echo "✓ kicau-mania.mp3 sudah ada (skip download)"

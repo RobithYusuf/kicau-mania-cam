@@ -5,115 +5,131 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Kicau Mania Cam — Face Tracking Dance Challenge</title>
   <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-  <header class="topbar">
-    <div class="topbar-row">
-      <h1 class="brand">
-        <span class="brand-dot"></span> KICAU MANIA <span class="brand-tag">CAM</span>
-      </h1>
-      <nav class="nav-actions">
-        <button id="navLeaderboard" class="nav-btn" title="Leaderboard">🏆 Leaderboard</button>
-      </nav>
+  <header class="border-b border-border">
+    <div class="max-w-[1280px] mx-auto px-5 py-4 flex flex-col gap-1.5">
+      <div class="flex items-center justify-between gap-4">
+        <h1 class="m-0 text-lg font-black tracking-[2px] flex items-center gap-2">
+          <span class="inline-block w-2.5 h-2.5 bg-accent rounded-full shadow-[0_0_12px_var(--color-accent)]"></span>
+          KICAU MANIA
+          <span class="text-[10px] bg-accent-2 text-white px-2 py-0.5 rounded-md tracking-wider align-middle">CAM</span>
+        </h1>
+        <nav class="flex gap-2">
+          <button id="navLeaderboard" class="nav-btn">🏆 Leaderboard</button>
+        </nav>
+      </div>
+      <div class="text-muted text-xs">Goyangkan tangan kiri ↔ kanan ikut beat. Tiap swing = +1 poin.</div>
     </div>
-    <div class="brand-sub">Goyangkan tangan kiri ↔ kanan ikut beat. Tiap swing = +1 poin.</div>
   </header>
 
-  <main class="stage">
-    <div class="video-wrap">
-      <video id="video" autoplay muted playsinline></video>
-      <canvas id="overlay"></canvas>
-      <div id="bigText" class="big-text hidden">GAS POL NDANGAK</div>
-      <div id="loading" class="loading">
-        <div class="loader"></div>
-        <p>Memuat model face tracking...</p>
+  <main class="grid gap-5 px-5 py-5 max-w-[1280px] mx-auto" style="grid-template-columns: minmax(0, 1fr) 280px;">
+    <div class="flex flex-col gap-1.5">
+      <div class="relative bg-black rounded-2xl overflow-hidden border border-border shadow-[0_20px_60px_rgb(0_0_0/0.5)]" style="aspect-ratio: 16/9;">
+        <video id="video" autoplay muted playsinline class="absolute inset-0 w-full h-full object-cover"></video>
+        <canvas id="overlay" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+        <div id="bigText" class="big-text hidden">GAS POL NDANGAK</div>
+        <div id="loading" class="loading hidden">
+          <div class="loader"></div>
+          <p class="m-0">Memuat model face tracking...</p>
+        </div>
+        <div id="permissionHint" class="hidden absolute bottom-4 left-4 bg-black/70 px-3 py-2 rounded-lg text-xs">
+          Izinkan akses kamera untuk mulai.
+        </div>
+        <div id="hudScore" class="hud-score">
+          <span class="text-[9px] text-muted tracking-[2px] font-semibold">SKOR</span>
+          <span id="hudScoreVal" class="text-[36px] font-black leading-none mt-0.5" style="color: var(--color-accent);">0</span>
+        </div>
       </div>
-      <div id="permissionHint" class="permission-hint hidden">Izinkan akses kamera untuk mulai.</div>
-      <div id="hudScore" class="hud-score">
-        <span class="hud-label">SKOR</span>
-        <span id="hudScoreVal" class="hud-value">0</span>
-      </div>
+      <div id="statusInfo" class="text-[11px] text-muted px-1 leading-relaxed text-center"></div>
     </div>
 
-    <aside class="panel">
-      <div class="card">
-        <div class="row-flex">
-          <div>
-            <div class="muted-label">PEMAIN</div>
-            <input id="playerName" class="name-input" placeholder="Nama kamu" maxlength="20" />
-          </div>
-          <button id="leaderboardBtn" class="btn-icon" title="Leaderboard">🏆</button>
+    <aside class="flex flex-col gap-3">
+      <!-- Player name -->
+      <section class="card-section">
+        <div class="muted-label mb-2">PEMAIN</div>
+        <div class="flex items-stretch gap-2">
+          <input id="playerName" class="input-base flex-1 min-w-0" placeholder="Nama kamu" maxlength="20" />
+          <button id="leaderboardBtn" class="btn-icon shrink-0" title="Leaderboard">🏆</button>
         </div>
-      </div>
+      </section>
 
-      <div class="card status-card">
-        <div class="row"><span>Wajah</span><b id="faceStatus">—</b></div>
-        <div class="row"><span>Swing ⬅➡</span><b id="pitchValue">—</b></div>
-        <div class="row"><span>Ekspresi</span><b id="expressionValue">—</b></div>
-        <div class="row"><span>Gesture</span><b id="comboValue">—</b></div>
-      </div>
+      <!-- Status -->
+      <section class="card-section">
+        <div class="muted-label mb-2">STATUS</div>
+        <div class="status-row">
+          <span>Wajah</span><b id="faceStatus">—</b>
+        </div>
+        <div class="status-row">
+          <span>Swing ⬅➡</span><b id="pitchValue">—</b>
+        </div>
+        <div class="status-row">
+          <span>Ekspresi</span><b id="expressionValue">—</b>
+        </div>
+        <div class="status-row !border-b-0">
+          <span>Gesture</span><b id="comboValue">—</b>
+        </div>
+      </section>
 
-      <div class="controls">
+      <!-- Controls -->
+      <section class="flex gap-2">
         <button id="startBtn" class="btn btn-primary">▶ MULAI</button>
         <button id="stopBtn" class="btn btn-ghost" disabled>■ STOP</button>
-      </div>
+      </section>
 
-      <div class="card collapsible" id="settingsCard">
-        <div class="card-head" data-toggle="settings">
-          <span>⚙ Pengaturan</span><span class="caret">▾</span>
+      <!-- Settings (collapsible) -->
+      <section class="card-section" id="settingsCard">
+        <div class="flex justify-between items-center cursor-pointer text-xs font-bold select-none" data-toggle="settings">
+          <span class="flex items-center gap-1.5">⚙ <span>Pengaturan</span></span>
+          <span class="text-muted text-[10px]">▾</span>
         </div>
-        <div class="card-body">
+        <div class="mt-3 flex flex-col gap-1.5 pt-3 border-t border-border hidden" data-body>
+          <label class="toggle"><input type="checkbox" id="optCamera" checked><span>📹 Kamera</span></label>
           <label class="toggle"><input type="checkbox" id="optLyric" checked><span>Lirik subtitle</span></label>
           <label class="toggle"><input type="checkbox" id="optCat" checked><span>Animasi kucing</span></label>
           <label class="toggle"><input type="checkbox" id="optJJ" checked><span>Efek JJ (shake + flash)</span></label>
           <label class="toggle"><input type="checkbox" id="optMusic" checked><span>Audio musik</span></label>
-          <label class="toggle"><input type="checkbox" id="optDebug"><span>Debug log (console)</span></label>
         </div>
-      </div>
+      </section>
 
-      <div class="hint card">
-        <p><b>Cara main:</b></p>
-        <ol>
-          <li>Isi nama, klik <b>MULAI</b>, izinkan kamera.</li>
-          <li>Tunjukkan <b>tangan</b> ✋ ke kamera.</li>
-          <li>Tutup mulut 🤐 + swing tangan kiri↔kanan = <b>+1 poin</b> per swing.</li>
-          <li>Stop → skor tersimpan ke leaderboard.</li>
+      <!-- How to play -->
+      <section class="card-section">
+        <div class="muted-label mb-2">CARA MAIN</div>
+        <ol class="text-xs text-muted list-decimal pl-4 space-y-1 leading-relaxed">
+          <li>Isi nama, klik <b class="text-text">MULAI</b>, izinkan kamera.</li>
+          <li>Tunjukkan <b class="text-text">tangan ✋</b> ke kamera.</li>
+          <li>Tutup mulut 🤐 + swing kiri↔kanan = <b class="text-text">+1 poin</b>.</li>
+          <li>Stop → skor masuk leaderboard global.</li>
         </ol>
-      </div>
+      </section>
     </aside>
   </main>
 
+  <!-- Leaderboard modal -->
   <div id="leaderboardModal" class="modal hidden">
-    <div class="modal-content">
-      <div class="modal-head">
-        <h2>🏆 Leaderboard</h2>
+    <div class="bg-bg-2 border border-border rounded-2xl p-5 sm:p-6 max-w-md w-full max-h-[80vh] overflow-y-auto shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="m-0 text-xl font-black flex items-center gap-2">🏆 Leaderboard</h2>
         <button class="btn-icon" id="closeLeaderboard">✕</button>
       </div>
-      <div class="lb-tabs">
-        <button id="tabLocal"  class="tab-btn active">📁 Local</button>
-        <button id="tabGlobal" class="tab-btn">🌐 Global (live)</button>
-      </div>
-      <ol id="leaderboardList" class="lb-list"></ol>
-      <div class="modal-actions">
-        <button id="exportLb" class="btn btn-ghost">⬇ Export JSON</button>
-        <button id="clearLb" class="btn btn-ghost">🗑 Hapus Local</button>
-      </div>
+      <div class="text-[11px] text-muted text-center mb-3 tracking-wide">🌐 GLOBAL · LIVE REALTIME</div>
+      <ol id="leaderboardList" class="list-none p-0 m-0 flex flex-col gap-2 min-h-[120px]"></ol>
     </div>
   </div>
 
-  <footer class="foot">
-    <div class="foot-credits">
-      <span>Made with 🐦 by <a href="https://github.com/robithyusuf" target="_blank" rel="noopener">@robithyusuf</a> · Open source MIT</span>
-      <a class="saweria-btn" href="https://saweria.co/robithyusuf" target="_blank" rel="noopener" title="Dukung dengan saweria">
-        ☕ Sawer
-      </a>
+  <footer class="border-t border-border mt-6">
+    <div class="max-w-[1280px] mx-auto px-5 py-4 flex items-center justify-center gap-3 flex-wrap text-muted text-[11px] text-center">
+      <span>Made with 🐦 by <a class="hover:underline font-semibold" style="color: var(--color-accent);" href="https://github.com/RobithYusuf/kicau-mania-cam" target="_blank" rel="noopener">@robithyusuf/kicau-mania-cam</a> · MIT ·</span>
+      <a class="saweria-btn" href="https://saweria.co/robithyusuf" target="_blank" rel="noopener" title="Dukung dengan saweria">☕ Sawer</a>
     </div>
   </footer>
 
   <audio id="bgMusic" src="/audio/kicau-mania.mp3" preload="auto"></audio>
-  <video id="catSource" src="/assets/cat-dance.mp4" muted loop playsinline preload="auto" style="display:none"></video>
+  <video id="catSource" src="/assets/cat-dance.mp4" muted loop playsinline preload="auto" class="hidden"></video>
 
-  <!-- MediaPipe Hands butuh global variable Hands, jadi via CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
   <script type="module" src="/src/main.ts"></script>
 </body>

@@ -8,14 +8,8 @@ dist/
 .env.*.local
 js/config.js
 
-# Audio berhak cipta — user download via download-audio.sh
+# Audio berhak cipta — user download via scripts/download-audio.sh
 public/audio/*.mp3
-audio/*.mp3
-audio/*-backup-*
-audio/*-v[0-9]*.mp3
-
-# Backup pre-migration
-.backup-pre-vite/
 
 # Deps
 node_modules/

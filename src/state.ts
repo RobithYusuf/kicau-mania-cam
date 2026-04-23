@@ -3,7 +3,7 @@ import type { Box, Settings } from "./types";
 export const SETTINGS_KEY = "kicau-mania-settings";
 
 export const settings: Settings = Object.assign(
-  { lyric: true, cat: true, jj: true, music: true, debug: false } as Settings,
+  { camera: true, lyric: true, cat: true, jj: true, music: true, debug: false } as Settings,
   JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") as Partial<Settings>,
 );
 

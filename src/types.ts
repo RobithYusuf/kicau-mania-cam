@@ -33,6 +33,7 @@ export interface GestureFlags {
 }
 
 export interface Settings {
+  camera: boolean;
   lyric: boolean;
   cat: boolean;
   jj: boolean;

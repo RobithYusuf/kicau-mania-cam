@@ -1,136 +1,187 @@
-# Kicau Mania Cam 🐦
+# 🐦 Kicau Mania Cam
 
-Web app open-source — game gestural berbasis kamera yang sinkron ke lagu **Kicau Mania** (Ndarboy Genk x Banditoz Yaow 86) viral di TikTok. Goyangkan tangan kiri↔kanan ikut beat, dapat poin, animasi kucing joget greenscreen + lirik karaoke real-time.
+**Game gestural berbasis kamera** yang sinkron ke lagu **Kicau Mania** (Ndarboy Genk x Banditoz Yaow 86) viral di TikTok. Goyangkan tangan kiri↔kanan ikut beat → dapat poin → masuk leaderboard global realtime.
 
-## Fitur
-- **Face & hand tracking di browser** (face-api.js + MediaPipe Hands, no server).
-- **Lirik karaoke** sync ke `audio.currentTime` via parser LRC standar.
-- **Beat-aware visuals** — kucing joget (chroma-key greenscreen), JJ shake/flash effect.
-- **Skor `+1` per swing** kiri↔kanan.
-- **Leaderboard 2 mode**:
-  - 📁 Local (localStorage)
-  - 🌐 Global (Supabase realtime, 1 row per IP, highest score saja)
-- **Toggle fitur** (lirik / kucing / JJ / musik / debug) — tersimpan di localStorage.
-- **Seamless audio loop** via Web Audio API `AudioBufferSourceNode`.
-- **Mobile-responsive**.
+🌐 **Live:** [kicaumania.online](https://kicaumania.online) · 📦 [GitHub](https://github.com/RobithYusuf/kicau-mania-cam)
 
-## Quick start (local dev)
+![Kicau Mania Cam screenshot](docs/img/hero.jpg)
 
-### 1. Clone & install dependency runtime
+---
+
+## 🚀 Tech Stack
+
+<a href="https://skillicons.dev">
+  <img src="https://skillicons.dev/icons?i=ts,vite,tailwind,supabase,vercel,nodejs,html,css&theme=dark" alt="Tech stack icons" />
+</a>
+
+<p>
+  <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/tensorflow/tensorflow-original.svg" alt="face-api.js (TensorFlow)" width="32" height="32" title="face-api.js (TensorFlow.js)" />
+  &nbsp;
+  <img src="https://www.gstatic.com/devrel-devsite/prod/v0e0f589edd85502a40d78d265d27cdac3c0ac3d3a4ff60f29ec3aae0d63c7d4f/mediapipe/images/lockup_prod_mediapipe_main.svg" alt="MediaPipe" height="32" title="MediaPipe Hands" />
+</p>
+
+![License MIT](https://img.shields.io/badge/License-MIT-10B981?style=flat-square)
+![Realtime](https://img.shields.io/badge/Leaderboard-Realtime-10B981?style=flat-square)
+![Build](https://img.shields.io/badge/Build-Passing-10B981?style=flat-square)
+![No Backend](https://img.shields.io/badge/Backend-Static_Only-3FCF8E?style=flat-square)
+
+---
+
+## ✨ Fitur
+
+- 📹 **Face & hand tracking** di browser (face-api.js + MediaPipe Hands, no server)
+- 🎤 **Lirik karaoke** sync per word ke `audio.currentTime` via parser LRC standar
+- 🎵 **Beat-aware visuals**: kucing greenscreen (chroma-key), JJ shake/flash, lyric pop animation
+- 💚 **+1 per swing** kiri↔kanan, presisi via centroid-based Schmitt trigger
+- 🏆 **Global leaderboard realtime** (Supabase, hashed IP, rate-limited 10/min)
+- ⚙ **Toggle fitur** (kamera/lirik/kucing/JJ/musik) persisted di localStorage
+- 🎶 **Seamless audio loop** via Web Audio `AudioBufferSourceNode` (sample-accurate)
+- 📱 **Mobile-responsive**
+
+---
+
+## 🏗 Architecture
+
+```
+┌──── Browser (no backend) ─────────────────────┐
+│                                               │
+│  Camera ──► face-api.js (face + landmarks)    │
+│         └► MediaPipe Hands (21 landmarks)     │
+│         └► Frame-diff (motion centroid)       │
+│                                               │
+│  ┌────► Gesture Engine (mouth + hand swing)   │
+│  └─────► +1 score per swing kiri↔kanan        │
+│                                               │
+│  Audio ──► Web Audio AudioBufferSource        │
+│        └► Analyser FFT → bass beat detect     │
+│        └► LRC timeline → lyric subtitle pop   │
+│                                               │
+│  Render ─► Canvas overlay: cats + lyric + JJ  │
+│                                               │
+└────────────┬──────────────────────────────────┘
+             │ submit_score(name, score) RPC
+             ▼
+        ┌─────────────────────────────┐
+        │  Supabase (Postgres + RT)   │
+        │  - hashed IP (SHA-256)      │
+        │  - RLS + rate limit         │
+        │  - realtime broadcast       │
+        └─────────────────────────────┘
+```
+
+---
+
+## 🚦 Quick Start
+
+### 1. Clone + install
 ```bash
-git clone <repo>
+git clone https://github.com/RobithYusuf/kicau-mania-cam.git
 cd kicau-mania-cam
-bash download-faceapi.sh   # download face-api.js library
-bash download-models.sh    # download model weights
+npm install
 ```
 
-### 2. Setup audio
-File audio TIDAK ter-bundle (hak cipta). Download sekali via:
+### 2. Download audio (hak cipta — tidak ter-bundle)
 ```bash
-bash download-audio.sh
+bash scripts/download-audio.sh
 ```
-Script akan: download YouTube Shorts → trim 23.4s → save ke `audio/kicau-mania.mp3`. File `audio/kicau-mania.lrc` sudah ada di repo (timing lirik authored sendiri).
+Butuh `yt-dlp` + `ffmpeg`: `brew install yt-dlp ffmpeg`
 
-> Butuh `yt-dlp` + `ffmpeg`. Install: `brew install yt-dlp ffmpeg` (macOS).
-
-### 3. Setup Supabase (opsional — kalau mau global leaderboard)
-- Lihat **MAINTENANCE.md** untuk SQL migration + ambil credentials.
-- Copy `js/config.example.js` → `js/config.js`, isi `SUPABASE_URL` + `SUPABASE_ANON_KEY`.
-- File `config.js` sudah di `.gitignore`, **jangan commit**.
-
-### 4. Jalankan server lokal
-HTTP server yang support Range request (untuk audio seek):
+### 3. Setup env (opsional, untuk global leaderboard)
 ```bash
-node server.js 8080
+cp .env.example .env.local
+# isi VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY
+# (lihat docs/MAINTENANCE.md untuk SQL migration)
 ```
-Atau pakai `python3 -m http.server` (TIDAK support Range — audio seek bermasalah).
 
-### 5. Buka browser
-http://localhost:8080 → klik MULAI → izinkan kamera.
+### 4. Run
+```bash
+npm run dev
+# buka http://localhost:8080 → klik MULAI → izinkan kamera
+```
 
-## Cara main
-1. Tunjukkan **tangan ✋** ke kamera (wajib).
-2. **Tutup mulut 🤐** + goyang tangan kiri↔kanan ikut beat.
-3. Tiap swing kiri↔kanan = **+1 poin**.
-4. Klik STOP → skor tersimpan ke leaderboard.
+### 5. Build & deploy
+```bash
+npm run build      # output di dist/
+# Vercel: tinggal push ke GitHub → auto-deploy
+```
 
-## Struktur file
+---
+
+## 🎮 Cara Main
+
+1. Isi nama, klik **▶ MULAI**, izinkan kamera.
+2. Tunjukkan **tangan ✋** ke kamera.
+3. **Tutup mulut 🤐** + swing tangan **kiri ↔ kanan** ikut beat.
+4. Tiap swing = **+1 poin**.
+5. Klik **■ STOP** → skor masuk leaderboard global.
+
+---
+
+## 📂 Struktur Project
+
 ```
 kicau-mania-cam/
+├── 📄 README.md
+├── 📄 LICENSE
+├── 📁 docs/
+│   ├── MAINTENANCE.md        ← Supabase setup + admin
+│   └── img/hero.jpg
+├── 📁 scripts/
+│   └── download-audio.sh
+├── 📁 src/
+│   ├── style.css              ← Tailwind v4
+│   ├── main.ts
+│   ├── state.ts
+│   ├── types.ts
+│   ├── audio/{buffer-player,beat,lrc}.ts
+│   ├── tracking/{face,hands,motion}.ts
+│   ├── render/{chroma,particles,effects}.ts
+│   └── leaderboard/{modal,supabase}.ts
+├── 📁 public/
+│   ├── audio/{kicau-mania.mp3,kicau-mania.lrc}
+│   ├── assets/cat-dance.mp4
+│   └── models/                ← face-api weights
 ├── index.html
-├── server.js                       # Node HTTP server dengan Range support
-├── css/style.css
-├── js/
-│   ├── app.js                      # main app
-│   ├── face-api.min.js             # vendored face-api.js
-│   ├── config.js                   # Supabase creds (gitignored)
-│   └── config.example.js           # template
-├── models/                         # face-api weight files
-├── audio/
-│   ├── kicau-mania.mp3             # short loop
-│   └── kicau-mania.lrc             # synced lyrics
-├── assets/cat-dance.mp4            # greenscreen kucing joget
-├── download-faceapi.sh
-├── download-models.sh
-├── MAINTENANCE.md                  # Supabase setup + admin guide
-├── LICENSE
-└── README.md
+├── package.json
+├── tsconfig.json
+├── vite.config.ts
+└── vercel.json                ← security headers
 ```
 
-## Security & privacy
+---
 
-### Yang TIDAK di-store
-- ❌ Tidak ada video/foto dari kamera (semua processing di-browser, tidak upload).
-- ❌ IP address asli (di-hash SHA-256 + salt sebelum disimpan ke DB).
+## 🔒 Security & Privacy
 
-### Yang di-store di Supabase (kalau global LB aktif)
-- ✅ Nama user (validated regex `^[A-Za-z0-9_\- .]{1,20}$`)
-- ✅ Skor (validated 0–5000)
-- ✅ Hash IP (untuk identifikasi unique pemain, untuk de-dup)
-- ✅ Timestamp
+| Aspek | Implementasi |
+|---|---|
+| Camera footage | ❌ NEVER uploaded — semua processing in-browser |
+| User IP | ✅ Hashed SHA-256 + salt sebelum disimpan ke DB |
+| Score validation | ✅ Server-side: range 0–5000, client throttle 3s |
+| Name validation | ✅ Regex `^[A-Za-z0-9_\- .]{1,20}$` (anti-XSS) |
+| Rate limit | ✅ 10 submit/menit/IP via SQL function |
+| RLS policies | ✅ Anon hanya SELECT + RPC call |
+| Headers | ✅ HSTS + CSP + X-Frame-Options via `vercel.json` |
+| HTTPS | ✅ Auto via Vercel/Cloudflare |
 
-### Validasi server-side (di SQL function)
-- Score range check
-- Name regex check (anti-XSS, anti-SQL injection by design)
-- Rate limit 10 submit/menit/IP
-- Hanya update kalau skor baru > existing
+Detail lengkap: [docs/MAINTENANCE.md](docs/MAINTENANCE.md)
 
-### Validasi client-side (defense in depth)
-- Throttle submit 1 per 3 detik per session
-- Sanitize HTML rendering (escape on display)
-- Cap score 5000 sebelum kirim
+---
 
-### Anon key paparan publik
-Supabase **anon key** dirancang untuk dipublic. Yang membatasi akses adalah **Row Level Security policies** + **RPC `security definer` function**. Anon role hanya bisa:
-- SELECT dari `leaderboard` (read-only)
-- CALL `submit_score()` RPC
+## 🤝 Kontribusi
 
-Tidak bisa: INSERT/UPDATE/DELETE direct, atau SELECT dari `submit_attempts` (rate-limit table).
-
-## Deployment
-
-### Static hosting
-Project ini 100% client-side static. Bisa deploy di:
-- **Cloudflare Pages** — drag-drop folder
-- **Netlify** — `netlify deploy --prod --dir .`
-- **Vercel** — `vercel --prod`
-- **GitHub Pages** — push branch ke `gh-pages`
-
-### Penting saat deploy
-1. **`js/config.js`** harus di-upload (atau gunakan environment variable + build step)
-2. Audio HTTP `Range` request perlu di-support — semua hosting modern OK secara default
-3. HTTPS wajib (kamera & MediaDevices API butuh secure context)
-
-## Tech stack
-- **Vanilla JS** (no build step, no framework)
-- **face-api.js** — face detection + landmarks + expressions
-- **MediaPipe Hands** — 21-point hand landmarks (akurasi tinggi)
-- **Web Audio API** — seamless loop + beat detection (FFT analyser)
-- **Supabase** — realtime DB + RPC (opsional)
-
-## Lisensi
-- **Code**: MIT (lihat LICENSE)
-- **Audio "Kicau Mania"**: hak cipta Ndarboy Genk x Banditoz Yaow 86 — bundle di repo cuma untuk demo lokal.
-
-## Kontribusi
 Issue & PR welcome. Untuk perubahan besar, buka issue dulu untuk diskusi.
+
+---
+
+## 📜 Lisensi
+
+- **Code**: [MIT](LICENSE)
+- **Audio "Kicau Mania"**: hak cipta Ndarboy Genk x Banditoz Yaow 86 — bundle di repo cuma untuk demo lokal, JANGAN redistribusi komersial.
+
+---
+
+## ☕ Dukung
+
+Kalau project ini berguna, traktir kopi: **[saweria.co/robithyusuf](https://saweria.co/robithyusuf)** 🙏
+
+Made with 🐦 by [@robithyusuf](https://github.com/RobithYusuf)

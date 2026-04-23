@@ -17,6 +17,8 @@
   "dependencies": {
     "@mediapipe/hands": "^0.4.1675469240",
     "@supabase/supabase-js": "^2.45.0",
-    "@vladmandic/face-api": "^1.7.14"
+    "@tailwindcss/vite": "^4.2.4",
+    "@vladmandic/face-api": "^1.7.14",
+    "tailwindcss": "^4.2.4"
   }
 }

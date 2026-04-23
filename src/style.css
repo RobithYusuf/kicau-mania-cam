@@ -1,0 +1,193 @@
+@import "tailwindcss";
+
+@source "../index.html";
+@source "./**/*.{ts,html}";
+
+@theme {
+  --color-bg:        #0b0f14;
+  --color-bg-2:      #141a22;
+  --color-accent:    #10b981;        /* emerald-500 — primary, nyaman di mata */
+  --color-accent-2:  #059669;        /* emerald-600 — hover/depth */
+  --color-text:      #f6f7f8;
+  --color-muted:     #9aa3ad;
+  --color-ok:        #22c55e;
+  --color-bad:       #ef4444;
+  --color-card:      rgb(255 255 255 / 0.04);
+  --color-border:    rgb(255 255 255 / 0.08);
+
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+@layer base {
+  html, body {
+    @apply m-0 p-0 min-h-screen text-text font-sans;
+    background:
+      radial-gradient(1200px 600px at 10% -10%, rgb(16 185 129 / 0.08), transparent),
+      radial-gradient(900px 500px at 110% 0%, rgb(5 150 105 / 0.06), transparent),
+      var(--color-bg);
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  /* Section card with comfortable padding & subtle separation */
+  .card-section {
+    @apply bg-card border border-border rounded-xl p-4;
+  }
+  .card {
+    @apply bg-card border border-border rounded-xl p-4;
+  }
+
+  /* Reusable input style */
+  .input-base {
+    @apply w-full bg-white/5 border border-border rounded-md px-3 py-2 text-text text-sm font-sans
+           transition-colors;
+  }
+  .input-base:focus {
+    @apply outline-none border-accent;
+  }
+
+  /* Status row */
+  .status-row {
+    @apply flex justify-between items-center gap-3 py-1.5 border-b border-dashed border-border text-xs text-muted;
+  }
+  .status-row b {
+    @apply text-text font-semibold text-xs text-right max-w-[60%] truncate;
+  }
+
+  /* Tiny uppercase label */
+  .muted-label {
+    @apply text-muted text-[10px] tracking-[2px] font-bold;
+  }
+
+  .btn {
+    @apply flex-1 border-0 px-4 py-2.5 rounded-lg font-extrabold tracking-wider text-xs cursor-pointer font-sans
+           transition-all duration-100;
+  }
+  .btn:hover:not(:disabled) { @apply brightness-110; }
+  .btn:disabled { @apply opacity-40 cursor-not-allowed; }
+  .btn:not(:disabled):active { @apply translate-y-px; }
+  .btn-primary {
+    background: var(--color-accent);
+    color: #fff;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-accent-2);
+  }
+  .btn-ghost { @apply bg-transparent text-text border border-border; }
+  /* Trophy button — match input height (38px) supaya alignment vertical rapi */
+  .btn-icon {
+    @apply bg-transparent border border-border rounded-md text-base cursor-pointer text-text
+           flex items-center justify-center;
+    width: 38px;
+    height: 38px;
+  }
+  .btn-icon:hover { @apply bg-white/5; }
+
+  .nav-btn {
+    @apply bg-card border border-border rounded-lg text-text font-sans text-xs font-bold px-3 py-1.5
+           cursor-pointer tracking-[0.5px] transition-colors;
+  }
+  .nav-btn:hover { background: rgb(255 204 0 / 0.12); border-color: var(--color-accent); }
+
+  /* Toggle switch dengan label ON/OFF di-overlay supaya state jelas */
+  .toggle {
+    @apply flex items-center justify-between gap-3 cursor-pointer text-xs select-none py-1;
+  }
+  .toggle > span { @apply flex-1; }
+  .toggle input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    @apply w-11 h-5 rounded-full relative cursor-pointer transition-colors flex-shrink-0;
+    background: rgb(255 255 255 / 0.12);
+  }
+  .toggle input[type="checkbox"]::before {
+    content: "OFF";
+    @apply absolute right-1.5 top-1/2 -translate-y-1/2 text-[8px] font-black text-muted tracking-wider;
+  }
+  .toggle input[type="checkbox"]:checked::before {
+    content: "ON";
+    @apply left-1.5 right-auto text-white;
+  }
+  .toggle input[type="checkbox"]::after {
+    content: "";
+    @apply absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-[left] duration-200 shadow;
+  }
+  .toggle input[type="checkbox"]:checked { background: var(--color-accent); }
+  .toggle input[type="checkbox"]:checked::after { left: 26px; }
+
+  .hud-score {
+    @apply absolute top-3 right-3 px-3.5 py-2 rounded-xl border border-border
+           flex flex-col items-center pointer-events-none z-[5];
+    background: rgb(0 0 0 / 0.55);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  .big-text {
+    @apply absolute left-1/2 font-black text-white whitespace-nowrap pointer-events-none;
+    top: 4%;
+    transform: translate(-50%, 0);
+    font-size: clamp(14px, 2.4vw, 28px);
+    text-shadow: 0 0 8px var(--color-accent), 0 0 14px var(--color-accent-2), 2px 2px 0 #000;
+    letter-spacing: 1.5px;
+    animation: km-pulse 0.25s ease-out;
+  }
+
+  .loading {
+    @apply absolute inset-0 flex flex-col items-center justify-center text-white text-sm gap-3.5;
+    background: rgb(0 0 0 / 0.65);
+  }
+  .loader {
+    @apply w-8 h-8 rounded-full;
+    border: 3px solid rgb(255 255 255 / 0.2);
+    border-top-color: var(--color-accent);
+    animation: km-spin 0.9s linear infinite;
+  }
+
+  .saweria-btn {
+    @apply inline-block px-2.5 py-1 rounded-full text-[11px] font-bold !no-underline
+           transition-transform duration-100;
+    background: var(--color-accent);
+    color: #fff !important;
+  }
+  .saweria-btn:hover { @apply scale-105 !no-underline; background: var(--color-accent-2); }
+
+  .modal {
+    @apply fixed inset-0 flex items-center justify-center z-[100] p-4;
+    background: rgb(0 0 0 / 0.75);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+
+  .tab-btn {
+    @apply flex-1 bg-card border border-border rounded-lg p-2 text-muted text-xs font-bold cursor-pointer font-sans;
+  }
+  .tab-btn.active {
+    @apply text-white border-transparent;
+    background: var(--color-accent);
+  }
+
+  .lb-row {
+    @apply grid items-center gap-2.5 px-3 py-2.5 bg-card rounded-lg text-xs;
+    grid-template-columns: 30px 1fr auto auto;
+  }
+  .lb-row .rank { @apply font-black text-base; color: var(--color-accent); }
+  .lb-row .name { @apply font-bold; }
+  .lb-row .score { @apply font-black; color: var(--color-accent-2); }
+  .lb-row .date { @apply text-[11px] text-muted; }
+}
+
+@keyframes km-pulse {
+  0%   { transform: translate(-50%, 0) scale(0.6); opacity: 0; }
+  40%  { transform: translate(-50%, 0) scale(1.1); opacity: 1; }
+  100% { transform: translate(-50%, 0) scale(1.0); opacity: 1; }
+}
+@keyframes km-spin { to { transform: rotate(360deg); } }
+
+#video, #overlay { transform: scaleX(-1); }
+
+@media (max-width: 600px) {
+  .lb-row { grid-template-columns: 24px 1fr auto; }
+  .lb-row .date { display: none; }
+}

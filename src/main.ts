@@ -10,7 +10,6 @@ import { loadLRC } from "./audio/lrc";
 import { spawnLyric, spawnCatDance, drawCats, drawLyrics, particles, catParticles } from "./render/particles";
 import { triggerJJ, applyShake, drawFlash, tickEffects, setBigTextEl, flashBigText } from "./render/effects";
 import { initSupabase, detectIP, submitGlobalScore } from "./leaderboard/supabase";
-import { saveLocal } from "./leaderboard/local";
 import { setupLeaderboardModal } from "./leaderboard/modal";
 import type { LyricEntry } from "./types";
 
@@ -34,23 +33,77 @@ const els = {
   playerName: $("playerName") as unknown as HTMLInputElement,
 };
 
-// Toggles
+// Toggles (debug dihapus dari UI; tetap ada di state untuk dev internal)
+const TOGGLE_LABELS: Record<keyof typeof settings, string> = {
+  camera: "📹 Kamera",
+  lyric: "Lirik",
+  cat: "🐱 Kucing",
+  jj: "⚡ Efek JJ",
+  music: "🔊 Musik",
+  debug: "Debug",
+};
 const toggles: Array<{ id: string; key: keyof typeof settings }> = [
+  { id: "optCamera", key: "camera" },
   { id: "optLyric", key: "lyric" },
   { id: "optCat", key: "cat" },
   { id: "optJJ", key: "jj" },
   { id: "optMusic", key: "music" },
-  { id: "optDebug", key: "debug" },
 ];
+
+type CamState = "off" | "loading" | "active" | "denied" | "disabled";
+let camState: CamState = "off";
+function setCamState(s: CamState): void { camState = s; renderStatusInfo(); }
+
+function renderStatusInfo(): void {
+  const el = $("statusInfo");
+  const off = toggles.filter(t => !settings[t.key]).map(t => TOGGLE_LABELS[t.key]);
+  const offTxt = off.length === 0
+    ? `<span style="color: var(--color-ok);">✓ semua fitur aktif</span>`
+    : `<span style="color: var(--color-bad);">✕ mati:</span> <b class="text-text">${off.join(" · ")}</b>`;
+
+  let camTxt = "";
+  switch (camState) {
+    case "off":
+      camTxt = `<span style="color: var(--color-muted);">📹 kamera belum nyala — klik <b class="text-text">▶ MULAI</b></span>`;
+      break;
+    case "loading":
+      camTxt = `<span style="color: var(--color-accent);">⏳ memuat kamera & model…</span>`;
+      break;
+    case "active":
+      camTxt = `<span style="color: var(--color-ok);">✓ kamera aktif</span>`;
+      break;
+    case "denied":
+      camTxt = `<span style="color: var(--color-bad);">⚠️ izin kamera ditolak browser — buka 🔒 di address bar → Allow Camera → reload</span>`;
+      break;
+    case "disabled":
+      camTxt = `<span style="color: var(--color-muted);">📹 kamera dimatikan via Pengaturan</span>`;
+      break;
+  }
+  el.innerHTML = `${camTxt}<br>${offTxt} · ubah di <b class="text-text">⚙ Pengaturan</b>`;
+}
+
 for (const t of toggles) {
   const el = $(t.id) as HTMLInputElement;
   el.checked = settings[t.key];
   el.addEventListener("change", () => {
     settings[t.key] = el.checked;
-    if (t.key === "debug") state.debug = el.checked;
     saveSettings();
+    renderStatusInfo();
+    if (t.key === "camera") {
+      if (!el.checked) {
+        setCamState("disabled");
+        if (state.running) stopCamera();
+      } else {
+        if (state.running) void startCamera().catch(() => { /* */ });
+        else setCamState("off");
+      }
+    }
   });
 }
+renderStatusInfo();
+// Force debug off in production UI
+state.debug = false;
+settings.debug = false;
 
 // Player name persist
 const NAME_KEY = "kicau-mania-name";
@@ -59,9 +112,12 @@ els.playerName.addEventListener("input", () => {
   localStorage.setItem(NAME_KEY, els.playerName.value.trim());
 });
 
-// Collapsible
+// Collapsible — toggle [data-body] visibility
 document.querySelectorAll<HTMLElement>("[data-toggle]").forEach((head) => {
-  head.addEventListener("click", () => head.parentElement?.classList.toggle("collapsed"));
+  head.addEventListener("click", () => {
+    const body = head.parentElement?.querySelector<HTMLElement>("[data-body]");
+    body?.classList.toggle("hidden");
+  });
 });
 
 // Big text overlay
@@ -92,16 +148,12 @@ setupLeaderboardModal({
   modal: $("leaderboardModal"),
   list: $("leaderboardList") as unknown as HTMLOListElement,
   close: $("closeLeaderboard"),
-  tabLocal: $("tabLocal"),
-  tabGlobal: $("tabGlobal"),
-  exportBtn: $("exportLb"),
-  clearBtn: $("clearLb"),
 });
-// Tombol leaderboard di navbar juga membuka modal yang sama
 $("navLeaderboard").addEventListener("click", () => $("leaderboardBtn").click());
 
 // Camera
 async function startCamera(): Promise<void> {
+  setCamState("loading");
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: 1280, height: 720, facingMode: "user" },
@@ -110,7 +162,14 @@ async function startCamera(): Promise<void> {
     els.video.srcObject = stream;
     await new Promise<void>((res) => { els.video.onloadedmetadata = () => res(); });
     await els.video.play();
+    setCamState("active");
   } catch (e) {
+    const err = e as Error & { name?: string };
+    if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+      setCamState("denied");
+    } else {
+      setCamState("off");
+    }
     els.permHint.classList.remove("hidden");
     throw e;
   }
@@ -119,6 +178,7 @@ function stopCamera(): void {
   const s = els.video.srcObject as MediaStream | null;
   s?.getTracks().forEach((t) => t.stop());
   els.video.srcObject = null;
+  setCamState(settings.camera ? "off" : "disabled");
 }
 
 // Render score
@@ -239,15 +299,15 @@ async function tick(): Promise<void> {
     mouthClosed = state.smoothedMouthGap < cfg.mouthClosedRatio;
     if (mouthClosed) state.lastMouthClosedAt = nowMs;
     els.faceStatus.textContent = "Terdeteksi ✓";
-    els.faceStatus.style.color = "var(--ok)";
+    els.faceStatus.style.color = "var(--color-ok)";
   } else {
     const faceGraceLeft = cfg.faceGraceMs - (nowMs - state.lastFaceSeenAt);
     if (faceGraceLeft > 0) {
       els.faceStatus.textContent = `Grace ${(faceGraceLeft / 1000).toFixed(1)}s`;
-      els.faceStatus.style.color = "var(--accent)";
+      els.faceStatus.style.color = "var(--color-accent)";
     } else {
       els.faceStatus.textContent = "—";
-      els.faceStatus.style.color = "var(--bad)";
+      els.faceStatus.style.color = "var(--color-bad)";
     }
   }
 
@@ -335,7 +395,7 @@ async function start(): Promise<void> {
     }
     await audioPlayer.ensureContext();
     await audioPlayer.loadBuffer("./audio/kicau-mania.mp3");
-    await startCamera();
+    if (settings.camera) await startCamera();
 
     // Reset session
     state.score = 0;
@@ -360,8 +420,7 @@ async function start(): Promise<void> {
 
 function stop(): void {
   if (state.score > 0) {
-    const name = els.playerName.value.trim() || els.playerName.placeholder.replace("placeholder", "Anonim") || "Anonim";
-    saveLocal(name, state.score);
+    const name = els.playerName.value.trim() || els.playerName.placeholder || "Anonim";
     void submitGlobalScore(name, state.score);
   }
   state.running = false;
