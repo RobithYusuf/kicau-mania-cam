@@ -10,20 +10,24 @@
 
 ## 🚀 Tech Stack
 
-<a href="https://skillicons.dev">
-  <img src="https://skillicons.dev/icons?i=ts,vite,tailwind,supabase,vercel,nodejs,html,css&theme=dark" alt="Tech stack icons" />
-</a>
-
 <p>
-  <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/tensorflow/tensorflow-original.svg" alt="face-api.js (TensorFlow)" width="32" height="32" title="face-api.js (TensorFlow.js)" />
-  &nbsp;
-  <img src="https://www.gstatic.com/devrel-devsite/prod/v0e0f589edd85502a40d78d265d27cdac3c0ac3d3a4ff60f29ec3aae0d63c7d4f/mediapipe/images/lockup_prod_mediapipe_main.svg" alt="MediaPipe" height="32" title="MediaPipe Hands" />
+  <a href="https://skillicons.dev">
+    <img src="https://skillicons.dev/icons?i=ts,vite,tailwind,supabase,vercel,nodejs,html,css&theme=dark" alt="Tech stack: TypeScript, Vite, Tailwind, Supabase, Vercel, Node, HTML, CSS" />
+  </a>
 </p>
 
-![License MIT](https://img.shields.io/badge/License-MIT-10B981?style=flat-square)
-![Realtime](https://img.shields.io/badge/Leaderboard-Realtime-10B981?style=flat-square)
-![Build](https://img.shields.io/badge/Build-Passing-10B981?style=flat-square)
-![No Backend](https://img.shields.io/badge/Backend-Static_Only-3FCF8E?style=flat-square)
+<p>
+  <img src="https://img.shields.io/badge/face--api.js-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white" alt="face-api.js" />
+  <img src="https://img.shields.io/badge/MediaPipe%20Hands-0097A7?style=for-the-badge&logo=google&logoColor=white" alt="MediaPipe Hands" />
+  <img src="https://img.shields.io/badge/Web%20Audio%20API-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" alt="Web Audio API" />
+</p>
+
+<p>
+  <img src="https://img.shields.io/badge/License-MIT-10B981?style=flat-square" alt="MIT License" />
+  <img src="https://img.shields.io/badge/Leaderboard-Realtime-10B981?style=flat-square" alt="Realtime Leaderboard" />
+  <img src="https://img.shields.io/badge/Build-Passing-10B981?style=flat-square" alt="Build Passing" />
+  <img src="https://img.shields.io/badge/Backend-Static_Only-3FCF8E?style=flat-square" alt="Static Only" />
+</p>
 
 ---
 
