@@ -79,8 +79,8 @@ export const cfg = {
   motionOffAt: 3,          // lowered from 4.5
   motionStrongMul: 2.2,
   swingCooldownMs: 120,    // slightly faster — was 140
-  swingLeftAt: 0.40,       // wider zone — was 0.42
-  swingRightAt: 0.60,      // wider zone — was 0.58
+  swingLeftAt: 0.37,       // lebih lebar lagi untuk jarak jauh
+  swingRightAt: 0.63,
   beatCooldownMs: 140,
   mouthGraceMs: 700,       // longer grace — was 400
   faceGraceMs: 500,

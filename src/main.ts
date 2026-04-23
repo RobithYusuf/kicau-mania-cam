@@ -326,14 +326,18 @@ function handleSwing(gestureActive: boolean, swingEligible: boolean): void {
   const cooldownOk = now - state.lastSwingAt > cfg.swingCooldownMs;
   const hasSource = state.handPresent || state.centroidValid;
 
-  // 1. Peak/reversal detection: fires at exact moment hand reverses direction.
-  //    When velocity changes sign after exceeding a minimum, the prior direction
-  //    was a complete swing. More sensitive than zone-based for natural waving.
+  // Threshold velocity dinamis — proporsional ke ukuran tangan di frame.
+  // Tangan jauh = scale kecil = threshold ikut kecil, sehingga swing tetap terhitung.
+  // Math.max(..., 0.010) = batas bawah agar noise statis tidak trigger.
+  const handScale = state.handScaleRaw > 0 ? state.handScaleRaw : 0.12;
+  const velThreshold = Math.max(handScale * 0.18, 0.010);
+
+  // 1. Peak/reversal detection — deteksi tepat saat tangan berbalik arah
   if (swingEligible && cooldownOk && hasSource) {
-    const reversed = prevVel * vel < -0.0002;
-    const hadMomentum = Math.abs(prevVel) > 0.04;
+    const reversed = prevVel * vel < -0.00005;
+    const hadMomentum = Math.abs(prevVel) > velThreshold;
     if (reversed && hadMomentum) {
-      const side: "L" | "R" = prevVel < 0 ? "L" : "R"; // swing peaked in prevVel direction
+      const side: "L" | "R" = prevVel < 0 ? "L" : "R";
       if (side !== state.lastSwingSide) {
         state.lastSwingAt = now;
         state.lastSwingSide = side;
@@ -343,7 +347,7 @@ function handleSwing(gestureActive: boolean, swingEligible: boolean): void {
     }
   }
 
-  // 2. Zone-based fallback: catches slow wide swings that peak detection misses
+  // 2. Zone-based fallback — zona diperlebar agar reachable dari jarak jauh
   let side: "L" | "R" | null = null;
   if (c < cfg.swingLeftAt) side = "L";
   else if (c > cfg.swingRightAt) side = "R";
@@ -507,10 +511,8 @@ async function tickFrame(): Promise<void> {
   const hasHand = state.handPresent || (!state.handsReady && state.centroidValid);
   const gestureActive = hasHand && handMoving && (mouthClosedWithGrace || veryStrongMotion);
 
-  // swingEligible: lebih longgar dari gestureActive — musik gating tetap strict,
-  // tapi scoring tidak memerlukan handMovingLatch sudah engage.
-  // Syarat: ada tangan DAN (mulut tutup / latch sudah aktif / gerakan sangat kuat)
-  const swingEligible = hasHand && (mouthClosedWithGrace || handMoving || veryStrongMotion);
+  // swingEligible: cukup ada tangan — velocity gate di handleSwing yang filter gerakan nyata vs noise
+  const swingEligible = hasHand;
 
   const reason = gestureActive ? "hand+mouth"
     : !hasHand ? "no-hand"
@@ -518,8 +520,12 @@ async function tickFrame(): Promise<void> {
     : !mouthClosedWithGrace ? "mouth-open"
     : "?";
 
-  if (settings.music) audioPlayer.drive((hasHand && handMoving) || gestureActive, reason);
+  const musicDrive = (hasHand && handMoving) || gestureActive;
+  if (settings.music) audioPlayer.drive(musicDrive, reason);
   else audioPlayer.drive(false, "music-toggle-off");
+
+  // Reset idle timer begitu user aktif (tangan gerak / musik nyala) — jangan tunggu addPoint
+  if (musicDrive && lastActivityAt > 0) lastActivityAt = performance.now();
 
   if (gestureActive && !state.gesturePrev) flashBigText("KICAU MANIA");
   state.gesturePrev = gestureActive;
@@ -553,7 +559,8 @@ async function tickFrame(): Promise<void> {
     const zone = state.smoothedCentroid < cfg.swingLeftAt ? "⬅"
       : state.smoothedCentroid > cfg.swingRightAt ? "➡" : "·";
     const scaleRatio = state.handScaleBaseline > 0 ? (state.handScaleFast / state.handScaleBaseline).toFixed(2) : "-";
-    els.pitchValue.textContent = `c=${cShow} ${zone} ${state.handSource} (${state.lastSwingSide || "-"}) fwd=${scaleRatio}${state.handScaleForwardLatch ? "!" : ""}`;
+    const handScaleDisplay = state.handScaleRaw > 0 ? state.handScaleRaw.toFixed(3) : "-";
+    els.pitchValue.textContent = `c=${cShow} ${zone} ${state.handSource} (${state.lastSwingSide || "-"}) sc=${handScaleDisplay} fwd=${scaleRatio}${state.handScaleForwardLatch ? "!" : ""}`;
     if (det) {
       els.exprValue.textContent = (mouthClosed ? "🤐" : "👄") +
         " (" + (Math.round(state.smoothedMouthGap * 1000) / 10) + "%)";
