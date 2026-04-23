@@ -258,7 +258,7 @@ const SUBMIT_FLUSH_MS = 5000;        // flush score ke server max tiap 5 detik
 function addPoint(side: "L" | "R" | "F"): void {
   state.score += 1;
   lastActivityAt = performance.now();
-  flashBigText(side === "L" ? "KICAU ⬅" : side === "R" ? "KICAU ➡" : "KICAU !");
+  flashBigText(side === "L" ? "KICAU ⬅ +1" : side === "R" ? "KICAU ➡ +1" : "KICAU ! +1");
   renderScore();
   bumpPersonalBest(state.score);
 }
@@ -518,7 +518,7 @@ async function tickFrame(): Promise<void> {
     : !mouthClosedWithGrace ? "mouth-open"
     : "?";
 
-  if (settings.music) audioPlayer.drive(handMoving || gestureActive, reason);
+  if (settings.music) audioPlayer.drive((hasHand && handMoving) || gestureActive, reason);
   else audioPlayer.drive(false, "music-toggle-off");
 
   if (gestureActive && !state.gesturePrev) flashBigText("KICAU MANIA");

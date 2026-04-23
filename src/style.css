@@ -128,7 +128,7 @@
     @apply absolute left-1/2 font-black text-white whitespace-nowrap pointer-events-none z-10;
     top: 4%;
     transform: translate(-50%, 0);
-    font-size: clamp(14px, 2.4vw, 28px);
+    font-size: clamp(12px, 1.8vw, 22px);
     text-shadow: 0 0 8px var(--color-accent), 0 0 14px var(--color-accent-2), 2px 2px 0 #000;
     letter-spacing: 1.5px;
     animation: km-pulse 0.25s ease-out;
