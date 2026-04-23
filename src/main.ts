@@ -107,7 +107,10 @@ const personalBestEl = $("personalBest");
 
 playerNameNav.value = localStorage.getItem(NAME_KEY) || "";
 
-let personalBest = parseInt(localStorage.getItem(BEST_KEY) || "0", 10);
+let personalBest = (() => {
+  const n = parseInt(localStorage.getItem(BEST_KEY) || "0", 10);
+  return Number.isFinite(n) && n >= 0 ? Math.min(n, 99999) : 0;
+})();
 function renderPersonalBest(): void {
   personalBestEl.textContent = personalBest.toLocaleString("id-ID");
 }
@@ -163,7 +166,6 @@ let lastAudioT = 0;
 
 loadLRC("./audio/kicau-mania.lrc").then((tl) => {
   LYRIC_TIMELINE = tl;
-  if (state.debug) console.log("[INIT] LRC loaded", tl.length);
 });
 
 // Supabase + IP
@@ -178,7 +180,8 @@ detectIP().then(async (ip) => {
   if (!myEntry) return;
 
   const localName = (localStorage.getItem(NAME_KEY) || "").trim();
-  const localBest = parseInt(localStorage.getItem(BEST_KEY) || "0", 10);
+  const rawLocalBest = parseInt(localStorage.getItem(BEST_KEY) || "0", 10);
+  const localBest = Number.isFinite(rawLocalBest) && rawLocalBest >= 0 ? rawLocalBest : 0;
 
   // Sync nama: kalau local kosong ATAU server lebih recent dari local best, pakai server
   if (!localName && myEntry.name) {
@@ -255,12 +258,21 @@ let submitFlushTimer: ReturnType<typeof setInterval> | null = null;
 const AUTO_STOP_IDLE_MS = 15000;
 const SUBMIT_FLUSH_MS = 5000;        // flush score ke server max tiap 5 detik
 
-function addPoint(side: "L" | "R" | "F"): void {
-  state.score += 1;
+function addPoint(side: "L" | "R" | "F", points: number = 1): void {
+  state.score += points;
   lastActivityAt = performance.now();
-  flashBigText(side === "L" ? "KICAU ⬅ +1" : side === "R" ? "KICAU ➡ +1" : "KICAU ! +1");
+  const plus = `+${points}`;
+  flashBigText(side === "L" ? `KICAU ⬅ ${plus}` : side === "R" ? `KICAU ➡ ${plus}` : `KICAU ! ${plus}`);
   renderScore();
   bumpPersonalBest(state.score);
+}
+
+// Swing strength → points mapping. Pakai rawPeak (mm/frame) sebagai ukuran kekuatan.
+//   <20mm = swing normal → +1
+//   20-50mm = swing kuat → +2
+//   >50mm = swing all-out → +3
+function swingPoints(rawPeakMm: number): number {
+  return rawPeakMm > 50 ? 3 : rawPeakMm > 20 ? 2 : 1;
 }
 
 function startSubmitFlush(): void {
@@ -300,100 +312,181 @@ function checkAutoStop(): void {
   }
 }
 
-function handleSwing(gestureActive: boolean, swingEligible: boolean): void {
-  const now = performance.now();
-  let src: "mp" | "motion" | "none" = "none";
-  let hx: number | null = null;
-  if (state.handPresent) { src = "mp"; hx = state.handX; }
-  else if (state.centroidValid) { src = "motion"; hx = state.centroidX; }
-  state.handSource = src;
+/* Swing detection via zero-crossing + peak velocity.
+ *
+ * Algoritma: track arah velocity; saat arah berubah (crossing zero), cek peak
+ * magnitude selama arah sebelumnya. Kalau peak lewat threshold → 1 swing valid.
+ * Setiap direction-reversal = 1 swing, match rhythm swing alami (L→R→L→R).
+ *
+ * Kelebihan vs velocity-threshold latch:
+ * - Tidak ada "dead zone" di tengah swing (latch stuck bikin swing berikutnya miss)
+ * - Peak tracking akumulasi frame tercepat → swing lembut tetap ketangkap
+ *   asal ada direction reversal
+ * - Threshold lebih rendah karena peak > average frame velocity
+ */
+const SWING_PEAK_THRESH = 0.0055; // 5.5mm/frame peak — filter garuk/fidget, terima swing soft 7mm+
+const SWING_DEAD_ZONE   = 0.0005;
+const FWD_PEAK_THRESH   = 0.007;  // 7mm — forward lebih strict supaya garuk vertical tidak counted
+const FWD_DEAD_ZONE     = 0.001;
+const FWD_COOLDOWN_MS   = 450;
+let lastForwardSwingAt = 0;
 
-  const prevC = state.smoothedCentroid;
-  if (hx !== null) {
-    const a = src === "mp" ? 0.15 : 0.5;
-    state.smoothedCentroid = state.smoothedCentroid * a + hx * (1 - a);
+// ── Swing diagnostic instrumentation ──────────────────────────────
+// Tracks every direction phase (L→R or R→L) with raw + EMA peak, duration, gap.
+// Accessible via window.KM.swingReport() in DevTools console.
+interface PhaseRecord {
+  seq: number;
+  dir: "L" | "R";
+  rawPeak: number;      // mm/frame — peak velocity sebelum EMA
+  emaPeak: number;      // mm/frame — peak velocity setelah EMA (yang dipakai untuk threshold)
+  frames: number;       // jumlah frame di fase ini
+  durationMs: number;
+  gapSinceLastSwingMs: number;
+  counted: boolean;
+  rejectReason: "" | "peak-low" | "cooldown";
+}
+const swingPhases: PhaseRecord[] = [];
+let phaseSeq = 0;
+let phaseStartMs = 0;
+let phaseFrameCount = 0;
+let phaseRawPeak = 0;
+function resetSwingDiag(): void {
+  swingPhases.length = 0;
+  phaseSeq = 0;
+  phaseStartMs = 0;
+  phaseFrameCount = 0;
+  phaseRawPeak = 0;
+}
+
+function handleSwing(_gestureActive: boolean, swingEligible: boolean): void {
+  const now = performance.now();
+
+  // Update smoothed centroid untuk UI (image-space display)
+  if (state.handPresent) {
+    state.smoothedCentroid = state.smoothedCentroid * 0.15 + state.handX * 0.85;
+  } else if (state.centroidValid) {
+    state.smoothedCentroid = state.smoothedCentroid * 0.5 + state.centroidX * 0.5;
   } else {
     state.smoothedCentroid = state.smoothedCentroid * 0.92 + 0.5 * 0.08;
   }
-  const c = state.smoothedCentroid;
-  const rawVel = c - prevC;
 
-  // Smooth velocity separately to detect peaks more robustly
-  const prevVel = state.swingVelocity;
-  state.swingVelocity = prevVel * 0.5 + rawVel * 0.5;
-  const vel = state.swingVelocity;
-
-  const cooldownOk = now - state.lastSwingAt > cfg.swingCooldownMs;
-  const hasSource = state.handPresent || state.centroidValid;
-
-  // Threshold velocity dinamis — proporsional ke ukuran tangan di frame.
-  // Tangan jauh = scale kecil = threshold ikut kecil, sehingga swing tetap terhitung.
-  // Math.max(..., 0.010) = batas bawah agar noise statis tidak trigger.
-  const handScale = state.handScaleRaw > 0 ? state.handScaleRaw : 0.12;
-  const velThreshold = Math.max(handScale * 0.18, 0.010);
-
-  // 1. Peak/reversal detection — deteksi tepat saat tangan berbalik arah
-  if (swingEligible && cooldownOk && hasSource) {
-    const reversed = prevVel * vel < -0.00005;
-    const hadMomentum = Math.abs(prevVel) > velThreshold;
-    if (reversed && hadMomentum) {
-      const side: "L" | "R" = prevVel < 0 ? "L" : "R";
-      if (side !== state.lastSwingSide) {
-        state.lastSwingAt = now;
-        state.lastSwingSide = side;
-        addPoint(side);
-        return;
-      }
-    }
-  }
-
-  // 2. Zone-based fallback — zona diperlebar agar reachable dari jarak jauh
-  let side: "L" | "R" | null = null;
-  if (c < cfg.swingLeftAt) side = "L";
-  else if (c > cfg.swingRightAt) side = "R";
-  if (swingEligible && side && side !== state.lastSwingSide && hasSource && cooldownOk) {
-    if (state.lastSwingSide !== null) addPoint(side);
-    state.lastSwingAt = now;
-    state.lastSwingSide = side;
-  }
-
-  if (!swingEligible && now - state.lastSwingAt > 1500) state.lastSwingSide = null;
-}
-
-// Forward swing via hand scale change (wrist↔middleMCP distance as depth proxy).
-// Tangan maju ke kamera → ukuran tangan di frame membesar → scale naik di atas baseline.
-const SCALE_ON  = 1.20;  // naik 20% dari baseline = maju
-const SCALE_OFF = 1.06;  // turun kembali ke 6% = swing selesai
-const SCALE_FWD_COOLDOWN_MS = 500;
-let lastForwardSwingAt = 0;
-
-function handleForwardSwing(swingEligible: boolean): void {
-  if (!state.handPresent || state.handScaleRaw === 0) return;
-
-  // Init baseline di frame pertama
-  if (state.handScaleBaseline === 0) {
-    state.handScaleBaseline = state.handScaleRaw;
-    state.handScaleFast = state.handScaleRaw;
+  if (!swingEligible || !state.handPresent || state.wristSampleCount < 3) {
+    if (!swingEligible && now - state.lastSwingAt > 1500) state.lastSwingSide = null;
+    state.swingDir = 0;
+    state.swingPeak = 0;
+    phaseRawPeak = 0;
+    phaseFrameCount = 0;
     return;
   }
-  // EMA cepat (respons ke gerakan)
-  state.handScaleFast = state.handScaleFast * 0.5 + state.handScaleRaw * 0.5;
-  // EMA sangat lambat (baseline = ukuran tangan normal user di jarak game)
-  state.handScaleBaseline = state.handScaleBaseline * 0.985 + state.handScaleRaw * 0.015;
 
-  const ratio = state.handScaleFast / state.handScaleBaseline;
+  // World velocity (meter per frame). EMA tipis → responsif, lag minim.
+  const rawVelX = state.wristWorldX - state.wristPrevX;
+  state.wristVelX = state.wristVelX * 0.3 + rawVelX * 0.7;
+  const vx = state.wristVelX;
+  const absRaw = Math.abs(rawVelX);
 
-  if (!state.handScaleForwardLatch && ratio > SCALE_ON) {
-    state.handScaleForwardLatch = true;
-  }
-  if (state.handScaleForwardLatch && ratio < SCALE_OFF) {
-    state.handScaleForwardLatch = false;
-    const now = performance.now();
-    if (swingEligible && now - lastForwardSwingAt > SCALE_FWD_COOLDOWN_MS) {
-      lastForwardSwingAt = now;
-      addPoint("F");
+  const curDir: -1 | 0 | 1 = vx > SWING_DEAD_ZONE ? 1
+    : vx < -SWING_DEAD_ZONE ? -1 : 0;
+
+  if (curDir === 0) {
+    // istirahat singkat — jangan reset peak, mungkin mid-swing pause
+  } else if (curDir === state.swingDir) {
+    // masih arah sama — track peak magnitude (EMA + raw)
+    const mag = Math.abs(vx);
+    if (mag > state.swingPeak) state.swingPeak = mag;
+    if (absRaw > phaseRawPeak) phaseRawPeak = absRaw;
+    phaseFrameCount++;
+  } else {
+    // DIRECTION REVERSAL — arah sebelumnya (swingDir) berakhir.
+    const prevDir = state.swingDir;
+    const prevPeak = state.swingPeak;
+    const prevRawPeak = phaseRawPeak;
+    const sincePrev = now - state.lastSwingAt;
+    // Pakai rawPeak (bukan emaPeak) karena EMA bocor peak di frame-1 reversal:
+    // velocity lama (opposite sign) carry-over ke EMA blend → peak dipotong.
+    // Raw velocity jujur, 5mm = swing nyata paling lembut.
+    const passedThresh = prevDir !== 0 && prevRawPeak > SWING_PEAK_THRESH;
+    const cooldownOk = sincePrev > cfg.swingCooldownMs;
+
+    if (prevDir !== 0) {
+      // Record fase yang baru berakhir ke diagnostic log
+      const rec: PhaseRecord = {
+        seq: ++phaseSeq,
+        dir: prevDir === 1 ? "R" : "L",
+        rawPeak: phaseRawPeak * 1000,
+        emaPeak: prevPeak * 1000,
+        frames: phaseFrameCount,
+        durationMs: phaseStartMs > 0 ? Math.round(now - phaseStartMs) : 0,
+        gapSinceLastSwingMs: Math.round(sincePrev),
+        counted: passedThresh && cooldownOk,
+        rejectReason: !passedThresh ? "peak-low" : !cooldownOk ? "cooldown" : "",
+      };
+      swingPhases.push(rec);
+      if (swingPhases.length > 500) swingPhases.shift();  // cap memory
+
+      if (import.meta.env.DEV) {
+        const tag = rec.counted ? "SWING +1" : `REJECT/${rec.rejectReason}`;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[#${rec.seq}] ${tag} ${rec.dir} rawPk=${rec.rawPeak.toFixed(1)}mm emaPk=${rec.emaPeak.toFixed(1)}mm frames=${rec.frames} dur=${rec.durationMs}ms gap=${rec.gapSinceLastSwingMs}ms`
+        );
+      }
+
+      if (rec.counted) {
+        const side: "L" | "R" = prevDir === 1 ? "R" : "L";
+        state.lastSwingAt = now;
+        state.lastSwingSide = side;
+        addPoint(side, swingPoints(rec.rawPeak));
+      }
     }
+    // Mulai fase baru — RESET EMA supaya frame berikutnya tidak dicemari
+    // velocity arah lama. Tanpa reset: emaPeak frame-1 bisa turun 70% dari raw.
+    state.wristVelX = rawVelX;
+    state.swingDir = curDir;
+    state.swingPeak = Math.abs(rawVelX);
+    phaseRawPeak = absRaw;
+    phaseFrameCount = 1;
+    phaseStartMs = now;
   }
+
+  // Update latch flag untuk UI
+  state.swingLatch = state.swingPeak > SWING_PEAK_THRESH;
+}
+
+function handleForwardSwing(swingEligible: boolean): void {
+  if (!state.handPresent || state.wristSampleCount < 3) {
+    state.fwdDir = 0;
+    state.fwdPeak = 0;
+    return;
+  }
+
+  const rawVelZ = state.wristWorldZ - state.wristPrevZ;
+  state.wristVelZ = state.wristVelZ * 0.3 + rawVelZ * 0.7;
+  const vz = state.wristVelZ;
+
+  // Z negatif = mendekati kamera (forward). Pakai zero-crossing juga.
+  const curDir: -1 | 0 | 1 = vz > FWD_DEAD_ZONE ? 1
+    : vz < -FWD_DEAD_ZONE ? -1 : 0;
+  const now = performance.now();
+
+  if (curDir !== 0 && curDir !== state.fwdDir) {
+    // Reversal: cek kalau fase sebelumnya = forward (Z turun) dan peak cukup
+    if (state.fwdDir === -1 && state.fwdPeak > FWD_PEAK_THRESH && swingEligible) {
+      if (now - lastForwardSwingAt > FWD_COOLDOWN_MS) {
+        lastForwardSwingAt = now;
+        addPoint("F", swingPoints(state.fwdPeak * 1000));
+      }
+    }
+    // Reset EMA supaya peak arah baru tidak bocor
+    state.wristVelZ = rawVelZ;
+    state.fwdDir = curDir;
+    state.fwdPeak = Math.abs(rawVelZ);
+  } else if (curDir === state.fwdDir && curDir !== 0) {
+    const mag = Math.abs(vz);
+    if (mag > state.fwdPeak) state.fwdPeak = mag;
+  }
+
+  state.forwardLatch = state.fwdDir === -1 && state.fwdPeak > FWD_PEAK_THRESH;
 }
 
 // LRC sync
@@ -450,7 +543,9 @@ async function tick(): Promise<void> {
 
   // Catch SEMUA error dalam tick → loop tetap jalan walau face-api/MediaPipe gagal
   try { await tickFrame(); }
-  catch (e) { console.warn("[TICK] frame error (ignored):", (e as Error).message); }
+  catch (e) {
+    if (import.meta.env.DEV) console.warn("[TICK] frame error (ignored):", (e as Error).message);
+  }
 
   // Pastikan next frame ALWAYS scheduled (walau error)
   if (state.running) requestAnimationFrame(() => { void tick(); });
@@ -492,7 +587,7 @@ async function tickFrame(): Promise<void> {
 
   const mouthClosedWithGrace = mouthClosed || (nowMs - state.lastMouthClosedAt < cfg.mouthGraceMs);
 
-  // MediaPipe Hands
+  // MediaPipe Tasks Vision — HandLandmarker (sync, per-frame)
   runHandsOnce(els.video);
 
   // Motion
@@ -511,8 +606,9 @@ async function tickFrame(): Promise<void> {
   const hasHand = state.handPresent || (state.handsLoadFailed && state.centroidValid);
   const gestureActive = hasHand && handMoving && (mouthClosedWithGrace || veryStrongMotion);
 
-  // swingEligible: cukup ada tangan — velocity gate di handleSwing yang filter gerakan nyata vs noise
-  const swingEligible = hasHand;
+  // swingEligible: butuh gesture aktif (tangan + mulut tutup 🤐) supaya garuk/fidget
+  // tanpa mulut tutup tidak dihitung swing. Mulut tutup = sinyal "saya lagi main".
+  const swingEligible = gestureActive;
 
   const reason = gestureActive ? "hand+mouth"
     : !hasHand ? "no-hand"
@@ -559,9 +655,10 @@ async function tickFrame(): Promise<void> {
     const cShow = state.smoothedCentroid.toFixed(2);
     const zone = state.smoothedCentroid < cfg.swingLeftAt ? "⬅"
       : state.smoothedCentroid > cfg.swingRightAt ? "➡" : "·";
-    const scaleRatio = state.handScaleBaseline > 0 ? (state.handScaleFast / state.handScaleBaseline).toFixed(2) : "-";
-    const handScaleDisplay = state.handScaleRaw > 0 ? state.handScaleRaw.toFixed(3) : "-";
-    els.pitchValue.textContent = `c=${cShow} ${zone} ${state.handSource} (${state.lastSwingSide || "-"}) sc=${handScaleDisplay} fwd=${scaleRatio}${state.handScaleForwardLatch ? "!" : ""}`;
+    const vx = (state.wristVelX * 1000).toFixed(1);   // mm/frame (current)
+    const pk = (state.swingPeak * 1000).toFixed(1);   // mm/frame (peak since last reversal)
+    const dirStr = state.swingDir === -1 ? "←" : state.swingDir === 1 ? "→" : "·";
+    els.pitchValue.textContent = `c=${cShow} ${zone} ${state.handSource} v=${vx} pk=${pk}${dirStr}${state.swingLatch ? "!" : ""}`;
     if (det) {
       els.exprValue.textContent = (mouthClosed ? "🤐" : "👄") +
         " (" + (Math.round(state.smoothedMouthGap * 1000) / 10) + "%)";
@@ -572,11 +669,6 @@ async function tickFrame(): Promise<void> {
       " r=" + reason;
   }
 
-  // Debug log
-  if (state.debug && nowMs - state.lastDbgLogAt > 500) {
-    state.lastDbgLogAt = nowMs;
-    console.log(`[DBG] face=${!!det} hand=${state.handPresent} motion=${state.smoothedMotion.toFixed(1)} c=${state.smoothedCentroid.toFixed(2)} gesture=${gestureActive} reason=${reason} score=${state.score}`);
-  }
   // rAF di-handle oleh outer tick() — JANGAN double-schedule di sini
 }
 
@@ -590,7 +682,9 @@ async function start(): Promise<void> {
     // Load semua resource paralel: face models, MediaPipe, audio buffer, camera
     await Promise.all([
       faceReady() ? Promise.resolve() : loadFaceModels("./models"),
-      setupHands().catch((e) => { console.warn("hands setup:", e); }),
+      setupHands().catch((e) => {
+        if (import.meta.env.DEV) console.warn("hands setup:", e);
+      }),
       audioPlayer.ensureContext().then(() => audioPlayer.loadBuffer("./audio/kicau-mania.mp3")),
       settings.camera ? startCamera() : Promise.resolve(),
     ]);
@@ -607,9 +701,26 @@ async function start(): Promise<void> {
     lastActivityAt = 0;
     lastSubmittedScore = 0;
     lastForwardSwingAt = 0;
-    state.handScaleBaseline = 0;
-    state.handScaleFast = 0;
-    state.handScaleForwardLatch = false;
+    state.wristWorldX = 0;
+    state.wristWorldY = 0;
+    state.wristWorldZ = 0;
+    state.wristPrevX = 0;
+    state.wristPrevZ = 0;
+    state.wristVelX = 0;
+    state.wristVelZ = 0;
+    state.wristSampleCount = 0;
+    state.swingDir = 0;
+    state.swingPeak = 0;
+    state.swingLatch = false;
+    state.fwdDir = 0;
+    state.fwdPeak = 0;
+    state.forwardLatch = false;
+    state.lastSwingSide = null;
+    resetSwingDiag();
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.log(`[SESSION START] thresh=${(SWING_PEAK_THRESH*1000).toFixed(1)}mm dead=${(SWING_DEAD_ZONE*1000).toFixed(2)}mm cooldown=${cfg.swingCooldownMs}ms`);
+    }
     renderScore();
 
     state.running = true;
@@ -621,7 +732,7 @@ async function start(): Promise<void> {
     void els.catSource.play().catch(() => { /* */ });
     void tick();
   } catch (e) {
-    console.error("[START] failed:", e);
+    if (import.meta.env.DEV) console.error("[START] failed:", e);
     els.startBtn.disabled = false;
     els.loading.classList.add("hidden");
   }
@@ -744,5 +855,60 @@ if (import.meta.env.DEV) {
     get lrc() { return { count: LYRIC_TIMELINE.length, cursor: lyricCursor, lastTriggered: lastLyricTriggered, lastAudioT }; },
     get camera() { return { state: camState, srcObj: !!els.video.srcObject, vw: els.video.videoWidth }; },
     forceSpawn() { onLyricTrigger("KICAU", 0.5); return "spawned"; },
+    swingPhases() { return swingPhases; },
+    swingReport() {
+      const counted = swingPhases.filter(p => p.counted);
+      const missed = swingPhases.filter(p => !p.counted);
+      const peakLow = missed.filter(p => p.rejectReason === "peak-low");
+      const cdBlock = missed.filter(p => p.rejectReason === "cooldown");
+      const stat = (arr: number[]) => arr.length === 0 ? { min: 0, max: 0, avg: 0, p50: 0 } : {
+        min: Math.min(...arr),
+        max: Math.max(...arr),
+        avg: arr.reduce((a, b) => a + b, 0) / arr.length,
+        p50: [...arr].sort((a, b) => a - b)[Math.floor(arr.length / 2)]!,
+      };
+      const countedRawPeaks = counted.map(p => p.rawPeak);
+      const countedEmaPeaks = counted.map(p => p.emaPeak);
+      const missedRawPeaks = peakLow.map(p => p.rawPeak);
+      const missedEmaPeaks = peakLow.map(p => p.emaPeak);
+      const gapsCounted = counted.map(p => p.gapSinceLastSwingMs);
+      const gapsRejected = cdBlock.map(p => p.gapSinceLastSwingMs);
+
+      const summary = {
+        total_phases: swingPhases.length,
+        counted: counted.length,
+        missed_peak_low: peakLow.length,
+        missed_cooldown: cdBlock.length,
+        score: state.score,
+        thresholds: {
+          peak_mm: SWING_PEAK_THRESH * 1000,
+          dead_zone_mm: SWING_DEAD_ZONE * 1000,
+          cooldown_ms: cfg.swingCooldownMs,
+        },
+        counted_peak_ema_mm: stat(countedEmaPeaks),
+        counted_peak_raw_mm: stat(countedRawPeaks),
+        missed_peak_ema_mm: stat(missedEmaPeaks),
+        missed_peak_raw_mm: stat(missedRawPeaks),
+        counted_gap_ms: stat(gapsCounted),
+        rejected_cooldown_gap_ms: stat(gapsRejected),
+      };
+      // eslint-disable-next-line no-console
+      console.log("=== SWING REPORT ===");
+      // eslint-disable-next-line no-console
+      console.table(summary);
+      // eslint-disable-next-line no-console
+      console.log("Detail phases (terakhir 50):");
+      // eslint-disable-next-line no-console
+      console.table(swingPhases.slice(-50).map(p => ({
+        "#": p.seq, dir: p.dir, counted: p.counted ? "✓" : "✕",
+        rejectReason: p.rejectReason || "-",
+        rawPk_mm: p.rawPeak.toFixed(1),
+        emaPk_mm: p.emaPeak.toFixed(1),
+        frames: p.frames,
+        dur_ms: p.durationMs,
+        gap_ms: p.gapSinceLastSwingMs,
+      })));
+      return summary;
+    },
   };
 }

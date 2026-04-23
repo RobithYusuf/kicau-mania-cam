@@ -10,7 +10,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           "face-api": ["@vladmandic/face-api"],
-          "mediapipe": ["@mediapipe/hands"],
+          "mediapipe": ["@mediapipe/tasks-vision"],
           "supabase": ["@supabase/supabase-js"],
         },
       },

@@ -51,7 +51,7 @@
           </button>
         </nav>
       </div>
-      <div class="text-muted text-xs">Goyangkan tangan kiri ↔ kanan ikut beat. Tiap swing = +1 poin.</div>
+      <div class="text-muted text-xs">Goyangkan tangan kiri ↔ kanan ikut beat. Swing makin kuat = poin makin banyak.</div>
     </div>
   </header>
 
@@ -121,7 +121,7 @@
         <ol class="text-xs text-muted list-decimal pl-4 space-y-1 leading-relaxed">
           <li>Isi nama, klik <b class="text-text">MULAI</b>, izinkan kamera.</li>
           <li>Tunjukkan <b class="text-text">tangan ✋</b> ke kamera.</li>
-          <li>Tutup mulut 🤐 + swing kiri↔kanan = <b class="text-text">+1 poin</b>.</li>
+          <li>Tutup mulut 🤐 + swing kiri↔kanan = <b class="text-text">dapat poin</b> (<b class="text-text">+1</b> normal, <b class="text-text">+2</b> kuat, <b class="text-text">+3</b> all-out).</li>
           <li>Skor <b class="text-text">auto-sync</b> tiap 5 detik · device baru otomatis dapat nama+best dari IP.</li>
         </ol>
       </section>
@@ -214,7 +214,6 @@
   <audio id="bgMusic" src="/audio/kicau-mania.mp3" preload="auto"></audio>
   <video id="catSource" src="/assets/cat-dance.mp4" muted loop playsinline preload="auto" class="hidden"></video>
 
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

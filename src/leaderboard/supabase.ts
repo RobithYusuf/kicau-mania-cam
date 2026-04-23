@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { state, MAX_SUBMIT_SCORE, NAME_PATTERN } from "../state";
+import { MAX_SUBMIT_SCORE, NAME_PATTERN } from "../state";
 import type { LeaderEntry } from "../types";
 
 let supa: SupabaseClient | null = null;
@@ -51,10 +51,9 @@ export async function submitGlobalScore(
   try {
     const { data, error } = await supa.rpc("submit_score", { p_ip: ip, p_name: cleanName, p_score: score });
     if (error) throw error;
-    if (state.debug) console.log(`[SUPA] submit ${force ? "FORCED" : ""}:`, data);
     return data as SubmitResult;
   } catch (e) {
-    console.warn("[SUPA] submit failed:", (e as Error).message || e);
+    if (import.meta.env.DEV) console.warn("[SUPA] submit failed:", (e as Error).message || e);
     return null;
   }
 }
@@ -76,7 +75,7 @@ export async function fetchMyEntry(): Promise<MyEntry | null> {
     if (!data || (data as MyEntry[]).length === 0) return null;
     return (data as MyEntry[])[0]!;
   } catch (e) {
-    console.warn("[SUPA] fetchMyEntry failed:", (e as Error).message || e);
+    if (import.meta.env.DEV) console.warn("[SUPA] fetchMyEntry failed:", (e as Error).message || e);
     return null;
   }
 }
@@ -97,7 +96,7 @@ export async function fetchGlobal(limit = 50): Promise<GlobalLeaderboard | null>
       topScore: rows[0]?.score || 0,
     };
   } catch (e) {
-    console.warn("[SUPA] fetch failed:", (e as Error).message || e);
+    if (import.meta.env.DEV) console.warn("[SUPA] fetch failed:", (e as Error).message || e);
     return null;
   }
 }

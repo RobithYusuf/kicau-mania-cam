@@ -86,7 +86,8 @@ function getMyName(): string {
   return (localStorage.getItem("kicau-mania-name") || "").trim();
 }
 function getMyBest(): number {
-  return parseInt(localStorage.getItem("kicau-mania-best") || "0", 10);
+  const n = parseInt(localStorage.getItem("kicau-mania-best") || "0", 10);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
 function renderRows(items: LeaderEntry[]): void {

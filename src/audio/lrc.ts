@@ -34,7 +34,7 @@ export async function loadLRC(url: string): Promise<LyricEntry[]> {
     if (!r.ok) throw new Error("http " + r.status);
     return parseLRC(await r.text());
   } catch (e) {
-    console.warn("[LRC] load failed:", e);
+    if (import.meta.env.DEV) console.warn("[LRC] load failed:", e);
     return [];
   }
 }

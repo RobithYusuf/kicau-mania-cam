@@ -1,5 +1,5 @@
 /* Web Audio AudioBufferSourceNode untuk seamless loop + gain control + analyser tap */
-import { state, cfg } from "../state";
+import { cfg } from "../state";
 
 let audioCtx: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
@@ -37,7 +37,9 @@ export const audioPlayer: AudioPlayer = {
       analyser.connect(audioCtx.destination);
     }
     if (audioCtx.state === "suspended") {
-      try { await audioCtx.resume(); } catch (e) { console.warn("[AUDIO] resume failed:", e); }
+      try { await audioCtx.resume(); } catch (e) {
+        if (import.meta.env.DEV) console.warn("[AUDIO] resume failed:", e);
+      }
     }
   },
 
@@ -47,7 +49,6 @@ export const audioPlayer: AudioPlayer = {
     const r = await fetch(url);
     const ab = await r.arrayBuffer();
     audioBuffer = await audioCtx!.decodeAudioData(ab);
-    if (state.debug) console.log(`[AUDIO] buffer decoded ${audioBuffer.duration.toFixed(2)}s`);
   },
 
   isPlaying() { return !!bufferSrc; },
@@ -71,10 +72,7 @@ export const audioPlayer: AudioPlayer = {
           try { bufferGain.gain.cancelScheduledValues(audioCtx.currentTime); } catch { /* */ }
           bufferGain.gain.value = cfg.musicTargetVolume;
         }
-        if (state.debug && lastMusicState !== "playing") {
-          console.log(`[MUSIC] PLAY (${reason}) offset=${lastBufferOffset.toFixed(2)}`);
-          lastMusicState = "playing";
-        }
+        lastMusicState = "playing";
       } else if (bufferGain) {
         try { bufferGain.gain.cancelScheduledValues(audioCtx.currentTime); } catch { /* */ }
         bufferGain.gain.value = cfg.musicTargetVolume;
@@ -88,10 +86,7 @@ export const audioPlayer: AudioPlayer = {
         pauseTimer = null;
         lastBufferOffset = audioPlayer.currentTime();
         stopBuffer();
-        if (state.debug && lastMusicState !== "stopped") {
-          console.log(`[MUSIC] PAUSED at offset=${lastBufferOffset.toFixed(2)}`);
-          lastMusicState = "stopped";
-        }
+        lastMusicState = "stopped";
       }, totalGrace);
     }
   },
@@ -107,10 +102,7 @@ export const audioPlayer: AudioPlayer = {
 };
 
 function startBuffer(offset: number): void {
-  if (!audioCtx || !audioBuffer) {
-    console.warn("[ANIM/AUDIO] startBuffer: missing", { ctx: !!audioCtx, buffer: !!audioBuffer });
-    return;
-  }
+  if (!audioCtx || !audioBuffer) return;
   stopBuffer();
   const src = audioCtx.createBufferSource();
   src.buffer = audioBuffer;

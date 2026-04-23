@@ -1,66 +1,91 @@
-/* MediaPipe Hands wrapper. Pakai script yang di-load via index.html (bukan ESM)
- * karena CDN package @mediapipe/hands tidak punya ES module export proper. */
+/* MediaPipe Tasks Vision — HandLandmarker (generation 2, maintained).
+ * Pakai world landmarks (3D meter-space, origin di hand center) supaya
+ * swing detection bisa pakai velocity nyata, bukan proxy 2D.
+ * GPU delegate → cepat + stabil. Model full (bukan lite) → akurat jarak jauh.
+ */
+import { HandLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import { state } from "../state";
 
-declare const Hands: any;
+let detector: HandLandmarker | null = null;
+let lastVideoTime = -1;
 
-let detector: any = null;
-let inflight = false;
+const WASM_ROOT = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm";
+const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 
-export async function setupHands(cdnPath = "https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240"): Promise<void> {
-  if (typeof Hands !== "function") {
-    console.warn("[HANDS] global Hands not loaded");
-    state.handsLoadFailed = true;  // MP gagal total — aktifkan centroid fallback
-    return;
-  }
-  detector = new Hands({ locateFile: (f: string) => `${cdnPath}/${f}` });
-  detector.setOptions({
-    maxNumHands: 2,
-    modelComplexity: 0,
-    minDetectionConfidence: 0.35,
-    minTrackingConfidence: 0.30,
-  });
-  detector.onResults(onResults);
-  if (typeof detector.initialize === "function") await detector.initialize();
-  state.handsReady = true;
-}
-
-interface MpLandmark { x: number; y: number; z?: number; }
-interface MpResults { multiHandLandmarks?: MpLandmark[][]; }
-
-function onResults(results: MpResults): void {
-  const list = results?.multiHandLandmarks || [];
-  if (list.length === 0) {
-    state.handPresent = false;
-    return;
-  }
-  let bestDist = -1, bestX: number | null = null, bestScale = 0;
-  for (const lm of list) {
-    const palm = lm[9]!;
-    const distFromCenter = Math.abs(palm.x - 0.5);
-    if (distFromCenter > bestDist) {
-      bestDist = distFromCenter;
-      bestX = palm.x;
-      // Hand scale: jarak wrist(0) ke middle_finger_mcp(9) di image coords
-      // Makin besar = tangan makin dekat ke kamera (maju)
-      const wrist = lm[0]!;
-      const dx = wrist.x - palm.x, dy = wrist.y - palm.y;
-      bestScale = Math.sqrt(dx * dx + dy * dy);
-    }
-  }
-  if (bestX !== null) {
-    state.handX = 1 - bestX;
-    state.handScaleRaw = bestScale;
-    state.handPresent = true;
-    state.handLastSeenAt = performance.now();
-    state.handSource = "mp";
+export async function setupHands(): Promise<void> {
+  try {
+    const fileset = await FilesetResolver.forVisionTasks(WASM_ROOT);
+    detector = await HandLandmarker.createFromOptions(fileset, {
+      baseOptions: {
+        modelAssetPath: MODEL_URL,
+        delegate: "GPU",
+      },
+      numHands: 2,
+      runningMode: "VIDEO",
+      minHandDetectionConfidence: 0.4,
+      minHandPresenceConfidence: 0.4,
+      minTrackingConfidence: 0.4,
+    });
+    state.handsReady = true;
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn("[HANDS] setup failed:", e);
+    state.handsLoadFailed = true;
   }
 }
 
-export async function runHandsOnce(video: HTMLVideoElement): Promise<void> {
-  if (!detector || !state.running || inflight) return;
-  inflight = true;
-  try { await detector.send({ image: video }); } catch { /* */ }
-  inflight = false;
-  if (performance.now() - state.handLastSeenAt > 700) state.handPresent = false;
+/** Call per-frame. Synchronous — tidak ada promise async seperti legacy. */
+export function runHandsOnce(video: HTMLVideoElement): void {
+  if (!detector || !state.running) return;
+  if (video.readyState < 2 || video.videoWidth === 0) return;
+
+  const now = performance.now();
+  // detectForVideo butuh timestamp monotonically increasing
+  if (now <= lastVideoTime) return;
+  lastVideoTime = now;
+
+  let res;
+  try {
+    res = detector.detectForVideo(video, now);
+  } catch { return; }
+
+  const imageLms = res.landmarks || [];
+  const worldLms = res.worldLandmarks || [];
+
+  if (imageLms.length === 0) {
+    if (now - state.handLastSeenAt > 500) state.handPresent = false;
+    // Reset sample count supaya velocity pertama saat tangan muncul lagi tidak dipakai
+    // (prev coords sudah stale → delta besar = spike palsu)
+    state.wristSampleCount = 0;
+    return;
+  }
+
+  // Pilih tangan yang paling dekat ke center x (kemungkinan besar tangan user yang gerak)
+  let bestIdx = 0, bestDist = Infinity;
+  for (let i = 0; i < imageLms.length; i++) {
+    const palm = imageLms[i]![9]!;  // middle finger MCP as palm center
+    const d = Math.abs(palm.x - 0.5);
+    if (d < bestDist) { bestDist = d; bestIdx = i; }
+  }
+
+  const img = imageLms[bestIdx]!;
+  const world = worldLms[bestIdx];
+  const palm = img[9]!;
+
+  // Image-space x untuk overlay (mirror karena video ditampilkan scaleX(-1))
+  state.handX = 1 - palm.x;
+  state.handPresent = true;
+  state.handLastSeenAt = now;
+  state.handSource = "mp";
+
+  // World-space wrist (landmark 0) — satuan meter, origin ~hand center.
+  // Z negatif = maju ke kamera (di MediaPipe world coords).
+  if (world && world[0]) {
+    const wrist = world[0];
+    state.wristPrevX = state.wristWorldX;
+    state.wristPrevZ = state.wristWorldZ;
+    state.wristWorldX = wrist.x;
+    state.wristWorldY = wrist.y;
+    state.wristWorldZ = wrist.z;
+    state.wristSampleCount++;
+  }
 }
