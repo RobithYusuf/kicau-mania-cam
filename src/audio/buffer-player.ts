@@ -125,7 +125,6 @@ function startBuffer(offset: number): void {
   bufferSrc = src;
   bufferStartCtxT = audioCtx.currentTime - offset;
   src.start(0, offset);
-  console.log(`[ANIM/AUDIO] ▶ buffer started offset=${offset.toFixed(2)} duration=${audioBuffer.duration.toFixed(2)} gain=${bufferGain.gain.value} ctxState=${audioCtx.state}`);
 }
 
 function stopBuffer(): void {

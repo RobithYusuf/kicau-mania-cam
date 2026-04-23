@@ -50,7 +50,8 @@ export function spawnLyric(text: string, durationSec: number, viewW: number, vie
   particles.push({
     text, color, fontSize, x, y,
     life: 0,
-    maxLife: Math.max(220, durationSec * 1000 * 0.85),
+    // Min 800ms — supaya cukup terlihat user sebelum hilang
+    maxLife: Math.max(800, durationSec * 1000 * 1.2),
     rot: (Math.random() - 0.5) * 0.18,
     popScale: 1.3,
   });
@@ -74,7 +75,8 @@ export function spawnCatDance(viewW: number, viewH: number): void {
   catParticles.push({
     x, y, scale,
     life: 0,
-    maxLife: 900 + Math.random() * 600,
+    // Lebih lama: 1.8–3 detik per kucing supaya kelihatan jelas
+    maxLife: 1800 + Math.random() * 1200,
     rot: (Math.random() - 0.5) * 0.2,
     bob: Math.random() * Math.PI * 2,
     popScale: 1.2,

@@ -62,23 +62,13 @@ function renderStatusInfo(): void {
 
   let camTxt = "";
   switch (camState) {
-    case "off":
-      camTxt = `<span style="color: var(--color-muted);">📹 kamera belum nyala — klik <b class="text-text">▶ MULAI</b></span>`;
-      break;
-    case "loading":
-      camTxt = `<span style="color: var(--color-accent);">⏳ memuat kamera & model…</span>`;
-      break;
-    case "active":
-      camTxt = `<span style="color: var(--color-ok);">✓ kamera aktif</span>`;
-      break;
-    case "denied":
-      camTxt = `<span style="color: var(--color-bad);">⚠️ izin kamera ditolak browser — buka 🔒 di address bar → Allow Camera → reload</span>`;
-      break;
-    case "disabled":
-      camTxt = `<span style="color: var(--color-muted);">📹 kamera dimatikan via Pengaturan</span>`;
-      break;
+    case "off":      camTxt = `<span style="color: var(--color-muted);">📹 belum nyala — klik <b class="text-text">▶ MULAI</b></span>`; break;
+    case "loading":  camTxt = `<span style="color: var(--color-accent);">⏳ memuat…</span>`; break;
+    case "active":   camTxt = `<span style="color: var(--color-ok);">✓ kamera</span>`; break;
+    case "denied":   camTxt = `<span style="color: var(--color-bad);">⚠️ izin kamera ditolak — Allow Camera + reload</span>`; break;
+    case "disabled": camTxt = `<span style="color: var(--color-muted);">📹 dimatikan</span>`; break;
   }
-  el.innerHTML = `${camTxt}<br>${offTxt} · ubah di <b class="text-text">⚙ Pengaturan</b>`;
+  el.innerHTML = `${camTxt} · ${offTxt} · <b class="text-text">⚙ Pengaturan</b>`;
 }
 
 for (const t of toggles) {
@@ -322,16 +312,9 @@ function handleSwing(gestureActive: boolean): void {
 }
 
 // LRC sync
-let _logSyncCounter = 0;
 function tickLyricSync(): void {
-  if (LYRIC_TIMELINE.length === 0) {
-    if (_logSyncCounter++ % 60 === 0) console.log("[ANIM] tickLyricSync skip: LRC empty");
-    return;
-  }
-  if (!audioPlayer.isPlaying()) {
-    if (_logSyncCounter++ % 60 === 0) console.log("[ANIM] tickLyricSync skip: audio NOT playing");
-    return;
-  }
+  if (LYRIC_TIMELINE.length === 0) return;
+  if (!audioPlayer.isPlaying()) return;
   const t = audioPlayer.currentTime();
   if (Math.abs(t - lastAudioT) > 0.5) {
     lyricCursor = 0;
@@ -355,15 +338,10 @@ function tickLyricSync(): void {
 function onLyricTrigger(text: string, durationSec: number): void {
   const viewW = els.overlay.width || 1280;
   const viewH = els.overlay.height || 720;
-  console.log(`[ANIM] trigger "${text}" view=${viewW}x${viewH} settings={lyric:${settings.lyric},cat:${settings.cat},jj:${settings.jj}}`);
-  if (settings.lyric) {
-    spawnLyric(text, durationSec, viewW, viewH);
-    console.log(`[ANIM] +lyric (total particles=${particles.length})`);
-  }
+  if (settings.lyric) spawnLyric(text, durationSec, viewW, viewH);
   if (settings.cat) {
     const n = 3 + Math.floor(Math.random() * 3);
     for (let i = 0; i < n; i++) spawnCatDance(viewW, viewH);
-    console.log(`[ANIM] +${n} cats (total cats=${catParticles.length})`);
   }
   if (settings.jj) triggerJJ();
 }
@@ -446,13 +424,7 @@ async function tick(): Promise<void> {
   state.gesturePrev = gestureActive;
 
   detectBeat();
-  // tickLyricSync jalan SELAMA musik playing (tidak gated gesture)
   tickLyricSync();
-  // Periodic state log untuk debug animasi (1x per 2 detik)
-  if (nowMs - state.lastDbgLogAt > 2000) {
-    state.lastDbgLogAt = nowMs;
-    console.log(`[ANIM/STATE] running=${state.running} audioPlaying=${audioPlayer.isPlaying()} audioT=${audioPlayer.currentTime().toFixed(2)} cursor=${lyricCursor}/${LYRIC_TIMELINE.length} particles=${particles.length} cats=${catParticles.length} settings={lyric:${settings.lyric},cat:${settings.cat},music:${settings.music}}`);
-  }
 
   // Render
   ctx.save();
