@@ -507,8 +507,8 @@ async function tickFrame(): Promise<void> {
   const handMoving = state.handMovingLatch;
   const veryStrongMotion = state.smoothedMotion > cfg.motionOnAt * 2.5;
 
-  // Kalau MediaPipe Hands tidak tersedia, fallback ke centroid motion (face area sudah dikecualikan)
-  const hasHand = state.handPresent || (!state.handsReady && state.centroidValid);
+  // Centroid fallback hanya kalau MP betul-betul gagal load (bukan saat masih inisialisasi)
+  const hasHand = state.handPresent || (state.handsLoadFailed && state.centroidValid);
   const gestureActive = hasHand && handMoving && (mouthClosedWithGrace || veryStrongMotion);
 
   // swingEligible: cukup ada tangan — velocity gate di handleSwing yang filter gerakan nyata vs noise
@@ -539,13 +539,14 @@ async function tickFrame(): Promise<void> {
     catParticles.length = 0;
   }
 
-  // Render
+  // Render — animasi hanya jalan saat musik aktif (gesture terdeteksi)
+  const musicPlaying = audioPlayer.isPlaying();
   ctx.save();
-  if (settings.jj) applyShake(ctx);
-  if (settings.cat) drawCats(ctx, els.catSource, state.currentBassNorm);
-  if (settings.lyric) drawLyrics(ctx, state.currentBassNorm);
+  if (settings.jj && musicPlaying) applyShake(ctx);
+  if (settings.cat && musicPlaying) drawCats(ctx, els.catSource, state.currentBassNorm);
+  if (settings.lyric && musicPlaying) drawLyrics(ctx, state.currentBassNorm);
   ctx.restore();
-  if (settings.jj) drawFlash(ctx);
+  if (settings.jj && musicPlaying) drawFlash(ctx);
   tickEffects();
 
   handleSwing(gestureActive, swingEligible);

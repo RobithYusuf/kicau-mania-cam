@@ -44,6 +44,7 @@ export const state = {
   handLastSeenAt: 0,
   handSource: "none" as "mp" | "motion" | "none",
   handsReady: false,
+  handsLoadFailed: false,   // true hanya kalau MP CDN gagal total (bukan sekadar belum selesai init)
 
   // Swing lateral
   lastSwingSide: null as "L" | "R" | null,

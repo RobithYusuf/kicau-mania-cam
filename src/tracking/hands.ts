@@ -10,6 +10,7 @@ let inflight = false;
 export async function setupHands(cdnPath = "https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240"): Promise<void> {
   if (typeof Hands !== "function") {
     console.warn("[HANDS] global Hands not loaded");
+    state.handsLoadFailed = true;  // MP gagal total — aktifkan centroid fallback
     return;
   }
   detector = new Hands({ locateFile: (f: string) => `${cdnPath}/${f}` });
