@@ -125,13 +125,13 @@
   }
 
   .big-text {
-    @apply absolute left-1/2 font-black text-white whitespace-nowrap pointer-events-none;
-    top: 4%;
+    @apply absolute left-1/2 font-black text-white whitespace-nowrap pointer-events-none z-10;
+    top: 12%;
     transform: translate(-50%, 0);
-    font-size: clamp(14px, 2.4vw, 28px);
-    text-shadow: 0 0 8px var(--color-accent), 0 0 14px var(--color-accent-2), 2px 2px 0 #000;
-    letter-spacing: 1.5px;
-    animation: km-pulse 0.25s ease-out;
+    font-size: clamp(28px, 5vw, 56px);
+    text-shadow: 0 0 12px var(--color-accent), 0 0 22px var(--color-accent-2), 3px 3px 0 #000;
+    letter-spacing: 2px;
+    animation: km-pulse 0.3s ease-out;
   }
 
   .loading {

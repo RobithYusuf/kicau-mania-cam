@@ -362,7 +362,12 @@ function tickLyricSync(): void {
 function onLyricTrigger(text: string, durationSec: number): void {
   const viewW = els.overlay.width || 1280;
   const viewH = els.overlay.height || 720;
-  if (settings.lyric) spawnLyric(text, durationSec, viewW, viewH);
+  if (settings.lyric) {
+    // Canvas particle (animated, banyak posisi)
+    spawnLyric(text, durationSec, viewW, viewH);
+    // DOM fallback (guaranteed visible — pakai bigText element absolute)
+    flashBigText(text, Math.max(700, durationSec * 1000 * 0.9));
+  }
   if (settings.cat) {
     const n = 3 + Math.floor(Math.random() * 3);
     for (let i = 0; i < n; i++) spawnCatDance(viewW, viewH);
@@ -382,9 +387,17 @@ function syncCanvasSize(): void {
 async function tick(): Promise<void> {
   if (!state.running) return;
 
-  // Face detect + render frame siap parallel: detectFace async di background,
-  // canvas sync + clear langsung jalan supaya ngga delay
-  const detPromise = detectFace(els.video);
+  // Catch SEMUA error dalam tick → loop tetap jalan walau face-api/MediaPipe gagal
+  try { await tickFrame(); }
+  catch (e) { console.warn("[TICK] frame error (ignored):", (e as Error).message); }
+
+  // Pastikan next frame ALWAYS scheduled (walau error)
+  if (state.running) requestAnimationFrame(() => { void tick(); });
+}
+
+async function tickFrame(): Promise<void> {
+  // Face detect + render frame siap parallel
+  const detPromise = detectFace(els.video).catch(() => null);
   const ctx = els.overlay.getContext("2d")!;
   syncCanvasSize();
   ctx.clearRect(0, 0, els.overlay.width, els.overlay.height);
@@ -484,8 +497,7 @@ async function tick(): Promise<void> {
     state.lastDbgLogAt = nowMs;
     console.log(`[DBG] face=${!!det} hand=${state.handPresent} motion=${state.smoothedMotion.toFixed(1)} c=${state.smoothedCentroid.toFixed(2)} gesture=${gestureActive} reason=${reason} score=${state.score}`);
   }
-
-  requestAnimationFrame(() => { void tick(); });
+  // rAF di-handle oleh outer tick() — JANGAN double-schedule di sini
 }
 
 // Lifecycle — semua resource di-load PARALLEL via Promise.all (no sequential await)
