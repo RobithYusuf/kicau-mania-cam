@@ -375,10 +375,13 @@ function onLyricTrigger(text: string, durationSec: number): void {
 
 // Main tick
 function syncCanvasSize(): void {
-  const v = els.video, c = els.overlay;
-  if (c.width !== v.videoWidth || c.height !== v.videoHeight) {
-    c.width = v.videoWidth || 1280;
-    c.height = v.videoHeight || 720;
+  const c = els.overlay;
+  const rect = c.getBoundingClientRect();
+  const w = Math.round(rect.width) || 1280;
+  const h = Math.round(rect.height) || 720;
+  if (c.width !== w || c.height !== h) {
+    c.width = w;
+    c.height = h;
   }
 }
 
