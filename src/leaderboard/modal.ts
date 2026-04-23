@@ -90,7 +90,8 @@ function getMyBest(): number {
 }
 
 function renderRows(items: LeaderEntry[]): void {
-  const GRID = "display:grid;grid-template-columns:60px 1fr 100px 110px;align-items:center;";
+  // Responsive: kolom UPDATED disembunyikan di mobile via CSS
+  const GRID = "display:grid;grid-template-columns:48px 1fr 80px 90px;align-items:center;";
   const myName = getMyName();
   const myBest = getMyBest();
 

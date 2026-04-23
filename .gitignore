@@ -8,8 +8,9 @@ dist/
 .env.*.local
 js/config.js
 
-# Audio berhak cipta — user download via scripts/download-audio.sh
+# Audio berhak cipta lainnya — only main file di-track untuk deploy
 public/audio/*.mp3
+!public/audio/kicau-mania.mp3
 
 # Deps
 node_modules/
