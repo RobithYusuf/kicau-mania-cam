@@ -1,10 +1,10 @@
 # 🐦 Kicau Mania Cam
 
-**Game gestural berbasis kamera** yang sinkron ke lagu **Kicau Mania** (Ndarboy Genk x Banditoz Yaow 86) viral di TikTok. Goyangkan tangan kiri↔kanan ikut beat → dapat poin → masuk leaderboard global realtime.
+**Game gestural berbasis kamera** yang sinkron ke lagu **Kicau Mania** (Ndarboy Genk x Banditoz Yaow 86) viral di TikTok. Goyangkan tangan kiri↔kanan ikut beat → dapat poin → masuk leaderboard global realtime. Kucing greenscreen joget + lirik karaoke pop sesuai beat.
 
-🌐 **Live:** [kicaumania.online](https://kicaumania.online) · 📦 [GitHub](https://github.com/RobithYusuf/kicau-mania-cam)
+🌐 **Live:** [kicaumania.online](https://kicaumania.online) · 📦 [GitHub](https://github.com/RobithYusuf/kicau-mania-cam) · ☕ [Sawer](https://saweria.co/robithyusuf)
 
-![Kicau Mania Cam screenshot](docs/img/hero.jpg)
+![Kicau Mania Cam — face tracking dance challenge dengan kucing AR greenscreen, leaderboard global Supabase realtime, dan lirik karaoke synced via LRC](docs/img/hero.jpg)
 
 ---
 

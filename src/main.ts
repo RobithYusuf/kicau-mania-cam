@@ -30,7 +30,6 @@ const els = {
   stopBtn: $("stopBtn") as HTMLButtonElement,
   bgMusic: $("bgMusic") as unknown as HTMLAudioElement,
   catSource: $("catSource") as unknown as HTMLVideoElement,
-  playerName: $("playerName") as unknown as HTMLInputElement,
 };
 
 // Toggles (debug dihapus dari UI; tetap ada di state untuk dev internal)
@@ -84,7 +83,10 @@ function renderStatusInfo(): void {
 
 for (const t of toggles) {
   const el = $(t.id) as HTMLInputElement;
-  el.checked = settings[t.key];
+  // Sync visual checkbox dari settings (DOM `checked` attribute → state.value)
+  el.checked = settings[t.key] !== false;
+  // Sync settings dari visual juga (kalau user reload dengan localStorage corrupt)
+  settings[t.key] = el.checked;
   el.addEventListener("change", () => {
     settings[t.key] = el.checked;
     saveSettings();
@@ -105,12 +107,51 @@ renderStatusInfo();
 state.debug = false;
 settings.debug = false;
 
-// Player name persist
+// Player name persist + debounce + personal best
 const NAME_KEY = "kicau-mania-name";
-els.playerName.value = localStorage.getItem(NAME_KEY) || "";
-els.playerName.addEventListener("input", () => {
-  localStorage.setItem(NAME_KEY, els.playerName.value.trim());
-});
+const BEST_KEY = "kicau-mania-best";
+const playerNameNav = $("playerNameNav") as unknown as HTMLInputElement;
+const nameSaveStatus = $("nameSaveStatus");
+const personalBestEl = $("personalBest");
+
+playerNameNav.value = localStorage.getItem(NAME_KEY) || "";
+
+let personalBest = parseInt(localStorage.getItem(BEST_KEY) || "0", 10);
+function renderPersonalBest(): void {
+  personalBestEl.textContent = personalBest.toLocaleString("id-ID");
+}
+function bumpPersonalBest(score: number): void {
+  if (score > personalBest) {
+    personalBest = score;
+    localStorage.setItem(BEST_KEY, String(personalBest));
+    renderPersonalBest();
+  }
+}
+renderPersonalBest();
+
+let nameSaveTimer: ReturnType<typeof setTimeout> | null = null;
+function setSaveStatus(s: "typing" | "saved" | ""): void {
+  if (s === "typing")     nameSaveStatus.textContent = "✏️";
+  else if (s === "saved") nameSaveStatus.textContent = "✓";
+  else                    nameSaveStatus.textContent = "";
+  if (s === "saved") setTimeout(() => { nameSaveStatus.textContent = ""; }, 1200);
+}
+
+function debouncedSaveName(value: string): void {
+  if (nameSaveTimer) clearTimeout(nameSaveTimer);
+  setSaveStatus("typing");
+  nameSaveTimer = setTimeout(() => {
+    const cleaned = value.trim();
+    localStorage.setItem(NAME_KEY, cleaned);
+    setSaveStatus("saved");
+    // Sync nama ke server: pakai skor session aktif KALAU ada, fallback ke personalBest
+    // (supaya nama bisa di-update kapan saja meski session tidak aktif)
+    const scoreToSync = state.score > 0 ? state.score : personalBest;
+    if (cleaned && scoreToSync > 0) void submitGlobalScore(cleaned, scoreToSync);
+  }, 500);
+}
+
+playerNameNav.addEventListener("input", (e) => debouncedSaveName((e.target as HTMLInputElement).value));
 
 // Collapsible — toggle [data-body] visibility
 document.querySelectorAll<HTMLElement>("[data-toggle]").forEach((head) => {
@@ -137,21 +178,26 @@ loadLRC("./audio/kicau-mania.lrc").then((tl) => {
 // Supabase + IP
 initSupabase();
 detectIP().then((ip) => {
-  if (!els.playerName.value && ip) {
-    els.playerName.placeholder = `user_${ip.split(".").slice(-2).join(".")}`;
+  if (!playerNameNav.value && ip) {
+    playerNameNav.placeholder = `user_${ip.split(".").slice(-2).join(".")}`;
   }
 });
 
 // Leaderboard modal
 setupLeaderboardModal({
-  btn: $("leaderboardBtn"),
+  btn: $("navLeaderboard"),
   modal: $("leaderboardModal"),
   list: $("leaderboardList") as unknown as HTMLOListElement,
   close: $("closeLeaderboard"),
 });
-$("navLeaderboard").addEventListener("click", () => $("leaderboardBtn").click());
 
-// Camera
+// Privacy modal
+const privacyModal = $("privacyModal");
+$("privacyBtn").addEventListener("click", () => privacyModal.classList.remove("hidden"));
+$("closePrivacy").addEventListener("click", () => privacyModal.classList.add("hidden"));
+privacyModal.addEventListener("click", (e) => { if (e.target === privacyModal) privacyModal.classList.add("hidden"); });
+
+// Camera — getUserMedia + onloadedmetadata + play parallel sebisa mungkin
 async function startCamera(): Promise<void> {
   setCamState("loading");
   try {
@@ -160,8 +206,11 @@ async function startCamera(): Promise<void> {
       audio: false,
     });
     els.video.srcObject = stream;
-    await new Promise<void>((res) => { els.video.onloadedmetadata = () => res(); });
-    await els.video.play();
+    // Tunggu metadata + play paralel (play sering bisa langsung walau metadata belum penuh)
+    await Promise.all([
+      new Promise<void>((res) => { els.video.onloadedmetadata = () => res(); }),
+      els.video.play().catch(() => { /* */ }),
+    ]);
     setCamState("active");
   } catch (e) {
     const err = e as Error & { name?: string };
@@ -184,11 +233,47 @@ function stopCamera(): void {
 // Render score
 function renderScore(): void { els.hudScoreVal.textContent = String(state.score); }
 
-// Swing scoring
+// Swing scoring + auto-sync via periodic flush (anti rate-limit spam)
+let lastActivityAt = 0;
+let lastSubmittedScore = 0;
+let submitFlushTimer: ReturnType<typeof setInterval> | null = null;
+const AUTO_STOP_IDLE_MS = 15000;
+const SUBMIT_FLUSH_MS = 5000;        // flush score ke server max tiap 5 detik
+
 function addPoint(side: "L" | "R"): void {
   state.score += 1;
+  lastActivityAt = performance.now();
   flashBigText(side === "L" ? "KICAU ⬅" : "KICAU ➡");
   renderScore();
+  bumpPersonalBest(state.score);
+  // TIDAK submit per swing — periodic flush yang handle (tiap 5s kalau berubah)
+}
+
+function startSubmitFlush(): void {
+  if (submitFlushTimer) return;
+  submitFlushTimer = setInterval(() => {
+    if (!state.running) return;
+    if (state.score === 0) return;
+    if (state.score === lastSubmittedScore) return;
+    const name = playerNameNav.value.trim() || playerNameNav.placeholder || "Anonim";
+    lastSubmittedScore = state.score;
+    void submitGlobalScore(name, state.score);
+  }, SUBMIT_FLUSH_MS);
+}
+
+function stopSubmitFlush(): void {
+  if (submitFlushTimer) { clearInterval(submitFlushTimer); submitFlushTimer = null; }
+}
+
+function checkAutoStop(): void {
+  if (!state.running) return;
+  if (state.score === 0) return;
+  if (lastActivityAt === 0) return;
+  const idle = performance.now() - lastActivityAt;
+  if (idle > AUTO_STOP_IDLE_MS) {
+    flashBigText("⏸ AUTO STOP — IDLE", 1500);
+    stop(); // stop() sekarang force-submit final score
+  }
 }
 
 function handleSwing(gestureActive: boolean): void {
@@ -237,9 +322,16 @@ function handleSwing(gestureActive: boolean): void {
 }
 
 // LRC sync
+let _logSyncCounter = 0;
 function tickLyricSync(): void {
-  if (LYRIC_TIMELINE.length === 0) return;
-  if (!audioPlayer.isPlaying()) return;
+  if (LYRIC_TIMELINE.length === 0) {
+    if (_logSyncCounter++ % 60 === 0) console.log("[ANIM] tickLyricSync skip: LRC empty");
+    return;
+  }
+  if (!audioPlayer.isPlaying()) {
+    if (_logSyncCounter++ % 60 === 0) console.log("[ANIM] tickLyricSync skip: audio NOT playing");
+    return;
+  }
   const t = audioPlayer.currentTime();
   if (Math.abs(t - lastAudioT) > 0.5) {
     lyricCursor = 0;
@@ -263,10 +355,15 @@ function tickLyricSync(): void {
 function onLyricTrigger(text: string, durationSec: number): void {
   const viewW = els.overlay.width || 1280;
   const viewH = els.overlay.height || 720;
-  if (settings.lyric) spawnLyric(text, durationSec, viewW, viewH);
+  console.log(`[ANIM] trigger "${text}" view=${viewW}x${viewH} settings={lyric:${settings.lyric},cat:${settings.cat},jj:${settings.jj}}`);
+  if (settings.lyric) {
+    spawnLyric(text, durationSec, viewW, viewH);
+    console.log(`[ANIM] +lyric (total particles=${particles.length})`);
+  }
   if (settings.cat) {
     const n = 3 + Math.floor(Math.random() * 3);
     for (let i = 0; i < n; i++) spawnCatDance(viewW, viewH);
+    console.log(`[ANIM] +${n} cats (total cats=${catParticles.length})`);
   }
   if (settings.jj) triggerJJ();
 }
@@ -283,10 +380,13 @@ function syncCanvasSize(): void {
 async function tick(): Promise<void> {
   if (!state.running) return;
 
-  const det = await detectFace(els.video);
+  // Face detect + render frame siap parallel: detectFace async di background,
+  // canvas sync + clear langsung jalan supaya ngga delay
+  const detPromise = detectFace(els.video);
   const ctx = els.overlay.getContext("2d")!;
   syncCanvasSize();
   ctx.clearRect(0, 0, els.overlay.width, els.overlay.height);
+  const det = await detPromise;
 
   let mouthClosed = false;
   const nowMs = performance.now();
@@ -337,14 +437,22 @@ async function tick(): Promise<void> {
     : !mouthClosedWithGrace ? "mouth-open"
     : "?";
 
-  if (settings.music) audioPlayer.drive(gestureActive, reason);
+  // Musik LANGSUNG play setelah MULAI (tidak nunggu gesture) → animasi & lirik
+  // selalu sinkron berjalan. Gesture hanya untuk scoring kicau swing.
+  if (settings.music) audioPlayer.drive(state.running, reason);
   else audioPlayer.drive(false, "music-toggle-off");
 
   if (gestureActive && !state.gesturePrev) flashBigText("KICAU MANIA");
   state.gesturePrev = gestureActive;
 
   detectBeat();
-  if (gestureActive) tickLyricSync();
+  // tickLyricSync jalan SELAMA musik playing (tidak gated gesture)
+  tickLyricSync();
+  // Periodic state log untuk debug animasi (1x per 2 detik)
+  if (nowMs - state.lastDbgLogAt > 2000) {
+    state.lastDbgLogAt = nowMs;
+    console.log(`[ANIM/STATE] running=${state.running} audioPlaying=${audioPlayer.isPlaying()} audioT=${audioPlayer.currentTime().toFixed(2)} cursor=${lyricCursor}/${LYRIC_TIMELINE.length} particles=${particles.length} cats=${catParticles.length} settings={lyric:${settings.lyric},cat:${settings.cat},music:${settings.music}}`);
+  }
 
   // Render
   ctx.save();
@@ -356,6 +464,7 @@ async function tick(): Promise<void> {
   tickEffects();
 
   handleSwing(gestureActive);
+  checkAutoStop();
 
   // UI throttle
   if (nowMs - state.lastUiUpdateAt > 250) {
@@ -383,45 +492,53 @@ async function tick(): Promise<void> {
   requestAnimationFrame(() => { void tick(); });
 }
 
-// Lifecycle
+// Lifecycle — semua resource di-load PARALLEL via Promise.all (no sequential await)
 async function start(): Promise<void> {
   els.startBtn.disabled = true;
-  try {
-    if (!faceReady()) {
-      els.loading.classList.remove("hidden");
-      await loadFaceModels("./models");
-      await setupHands();
-      els.loading.classList.add("hidden");
-    }
-    await audioPlayer.ensureContext();
-    await audioPlayer.loadBuffer("./audio/kicau-mania.mp3");
-    if (settings.camera) await startCamera();
+  els.loading.classList.remove("hidden");
 
-    // Reset session
+  try {
+    // Load semua resource paralel: face models, MediaPipe, audio buffer, camera
+    await Promise.all([
+      faceReady() ? Promise.resolve() : loadFaceModels("./models"),
+      setupHands().catch((e) => { console.warn("hands setup:", e); }),
+      audioPlayer.ensureContext().then(() => audioPlayer.loadBuffer("./audio/kicau-mania.mp3")),
+      settings.camera ? startCamera() : Promise.resolve(),
+    ]);
+
+    els.loading.classList.add("hidden");
+
+    // Reset session state
     state.score = 0;
     state.baselinePitch = null;
     state.smoothedPitch = 0;
     state.prevFrame = null;
     lyricCursor = 0;
     lastLyricTriggered = -1;
+    lastActivityAt = 0;
+    lastSubmittedScore = 0;
     renderScore();
 
     state.running = true;
     els.stopBtn.disabled = false;
+    startSubmitFlush();
 
+    // Cat source play fire-and-forget (tidak block tick)
     void els.catSource.play().catch(() => { /* */ });
     void tick();
   } catch (e) {
-    console.error(e);
+    console.error("[START] failed:", e);
     els.startBtn.disabled = false;
     els.loading.classList.add("hidden");
   }
 }
 
 function stop(): void {
-  if (state.score > 0) {
-    const name = els.playerName.value.trim() || els.playerName.placeholder || "Anonim";
-    void submitGlobalScore(name, state.score);
+  stopSubmitFlush();
+  if (state.score > 0 && state.score > lastSubmittedScore) {
+    bumpPersonalBest(state.score);
+    const name = playerNameNav.value.trim() || playerNameNav.placeholder || "Anonim";
+    void submitGlobalScore(name, state.score, true);
   }
   state.running = false;
   els.stopBtn.disabled = true;
@@ -435,3 +552,15 @@ function stop(): void {
 
 els.startBtn.addEventListener("click", () => { void start(); });
 els.stopBtn.addEventListener("click", stop);
+
+// Debug helper — inspect app internal state via console
+(window as unknown as { KM: object }).KM = {
+  state, settings, particles, catParticles,
+  get audio() { return { isPlaying: audioPlayer.isPlaying(), currentTime: audioPlayer.currentTime() }; },
+  get lrc() { return { count: LYRIC_TIMELINE.length, cursor: lyricCursor, lastTriggered: lastLyricTriggered, lastAudioT }; },
+  get camera() { return { state: camState, srcObj: !!els.video.srcObject, vw: els.video.videoWidth }; },
+  forceSpawn() {
+    onLyricTrigger("KICAU", 0.5);
+    return "spawned";
+  },
+};

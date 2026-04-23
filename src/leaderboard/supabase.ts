@@ -34,10 +34,15 @@ export function getIP(): string | null { return userIP; }
 
 interface SubmitResult { status: string; current_score: number; }
 
-export async function submitGlobalScore(name: string, score: number): Promise<SubmitResult | { skipped: string } | null> {
+export async function submitGlobalScore(
+  name: string,
+  score: number,
+  force = false,
+): Promise<SubmitResult | { skipped: string } | null> {
   if (!supa) return null;
   const now = Date.now();
-  if (now - lastSubmitAt < 3000) return { skipped: "throttle" };
+  // Throttle bisa di-bypass dengan force=true (untuk final submit di STOP/auto-stop)
+  if (!force && now - lastSubmitAt < 3000) return { skipped: "throttle" };
   if (typeof score !== "number" || score < 0 || score > MAX_SUBMIT_SCORE) return { skipped: "score-range" };
   const cleanName = String(name || "").trim().slice(0, 20);
   if (!NAME_PATTERN.test(cleanName)) return { skipped: "name-invalid" };
@@ -46,7 +51,7 @@ export async function submitGlobalScore(name: string, score: number): Promise<Su
   try {
     const { data, error } = await supa.rpc("submit_score", { p_ip: ip, p_name: cleanName, p_score: score });
     if (error) throw error;
-    if (state.debug) console.log("[SUPA] submit:", data);
+    if (state.debug) console.log(`[SUPA] submit ${force ? "FORCED" : ""}:`, data);
     return data as SubmitResult;
   } catch (e) {
     console.warn("[SUPA] submit failed:", (e as Error).message || e);
@@ -54,16 +59,27 @@ export async function submitGlobalScore(name: string, score: number): Promise<Su
   }
 }
 
-export async function fetchGlobal(limit = 20): Promise<LeaderEntry[] | null> {
+export interface GlobalLeaderboard {
+  rows: LeaderEntry[];
+  total: number;
+  topScore: number;
+}
+
+export async function fetchGlobal(limit = 50): Promise<GlobalLeaderboard | null> {
   if (!supa) return null;
   try {
-    const { data, error } = await supa
+    const { data, error, count } = await supa
       .from("leaderboard")
-      .select("name, score, updated_at")
+      .select("name, score, updated_at", { count: "exact" })
       .order("score", { ascending: false })
       .limit(limit);
     if (error) throw error;
-    return data as LeaderEntry[];
+    const rows = (data || []) as LeaderEntry[];
+    return {
+      rows,
+      total: count || rows.length,
+      topScore: rows[0]?.score || 0,
+    };
   } catch (e) {
     console.warn("[SUPA] fetch failed:", (e as Error).message || e);
     return null;

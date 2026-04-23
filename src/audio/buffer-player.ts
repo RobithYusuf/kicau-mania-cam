@@ -107,7 +107,10 @@ export const audioPlayer: AudioPlayer = {
 };
 
 function startBuffer(offset: number): void {
-  if (!audioCtx || !audioBuffer) return;
+  if (!audioCtx || !audioBuffer) {
+    console.warn("[ANIM/AUDIO] startBuffer: missing", { ctx: !!audioCtx, buffer: !!audioBuffer });
+    return;
+  }
   stopBuffer();
   const src = audioCtx.createBufferSource();
   src.buffer = audioBuffer;
@@ -122,6 +125,7 @@ function startBuffer(offset: number): void {
   bufferSrc = src;
   bufferStartCtxT = audioCtx.currentTime - offset;
   src.start(0, offset);
+  console.log(`[ANIM/AUDIO] ▶ buffer started offset=${offset.toFixed(2)} duration=${audioBuffer.duration.toFixed(2)} gain=${bufferGain.gain.value} ctxState=${audioCtx.state}`);
 }
 
 function stopBuffer(): void {

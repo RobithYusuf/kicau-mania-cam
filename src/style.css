@@ -168,14 +168,12 @@
     background: var(--color-accent);
   }
 
-  .lb-row {
-    @apply grid items-center gap-2.5 px-3 py-2.5 bg-card rounded-lg text-xs;
-    grid-template-columns: 30px 1fr auto auto;
+  /* Leaderboard table row (grid + style inline) */
+  .lb-table-row {
+    @apply px-6 py-3.5 border-b border-border transition-colors;
   }
-  .lb-row .rank { @apply font-black text-base; color: var(--color-accent); }
-  .lb-row .name { @apply font-bold; }
-  .lb-row .score { @apply font-black; color: var(--color-accent-2); }
-  .lb-row .date { @apply text-[11px] text-muted; }
+  .lb-table-row:hover { background: rgb(255 255 255 / 0.02); }
+  .lb-table-row:last-child { @apply border-b-0; }
 }
 
 @keyframes km-pulse {

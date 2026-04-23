@@ -40,4 +40,5 @@ export function flashBigText(text: string, durationMs = 600): void {
   bigTextEl.classList.remove("hidden");
   if (bigTextTimer) clearTimeout(bigTextTimer);
   bigTextTimer = setTimeout(() => bigTextEl?.classList.add("hidden"), durationMs);
+  void durationMs; // signature compat
 }
