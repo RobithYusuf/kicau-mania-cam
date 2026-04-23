@@ -48,6 +48,7 @@ export const state = {
   // Swing
   lastSwingSide: null as "L" | "R" | null,
   lastSwingAt: 0,
+  swingVelocity: 0,        // smoothed velocity for peak detection
 
   // Audio + beat
   bassAvg: 0,
@@ -68,14 +69,14 @@ export const state = {
 export const cfg = {
   pitchThreshold: 12,
   mouthClosedRatio: 0.045,
-  motionOnAt: 7,
-  motionOffAt: 4.5,
+  motionOnAt: 5,           // lowered from 7 — engage latch more easily
+  motionOffAt: 3,          // lowered from 4.5
   motionStrongMul: 2.2,
-  swingCooldownMs: 140,
-  swingLeftAt: 0.42,
-  swingRightAt: 0.58,
+  swingCooldownMs: 120,    // slightly faster — was 140
+  swingLeftAt: 0.40,       // wider zone — was 0.42
+  swingRightAt: 0.60,      // wider zone — was 0.58
   beatCooldownMs: 140,
-  mouthGraceMs: 400,
+  mouthGraceMs: 700,       // longer grace — was 400
   faceGraceMs: 500,
 
   // Audio gating

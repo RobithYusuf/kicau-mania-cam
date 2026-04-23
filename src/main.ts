@@ -285,13 +285,23 @@ function checkAutoStop(): void {
   if (state.score === 0) return;
   if (lastActivityAt === 0) return;
   const idle = performance.now() - lastActivityAt;
+  const remaining = Math.ceil((AUTO_STOP_IDLE_MS - idle) / 1000);
+
   if (idle > AUTO_STOP_IDLE_MS) {
+    els.stopBtn.textContent = "■ STOP";
     flashBigText("⏸ AUTO STOP — IDLE", 1500);
-    stop(); // stop() sekarang force-submit final score
+    stop();
+  } else if (remaining <= 10) {
+    // Countdown muncul di 10 detik terakhir
+    els.stopBtn.textContent = `■ STOP ${remaining}s`;
+    els.stopBtn.style.opacity = remaining <= 3 ? "0.6" : "1";
+  } else {
+    els.stopBtn.textContent = "■ STOP";
+    els.stopBtn.style.opacity = "1";
   }
 }
 
-function handleSwing(gestureActive: boolean): void {
+function handleSwing(gestureActive: boolean, swingEligible: boolean): void {
   const now = performance.now();
   let src: "mp" | "motion" | "none" = "none";
   let hx: number | null = null;
@@ -307,12 +317,24 @@ function handleSwing(gestureActive: boolean): void {
     state.smoothedCentroid = state.smoothedCentroid * 0.92 + 0.5 * 0.08;
   }
   const c = state.smoothedCentroid;
-  const velocity = c - prevC;
+  const rawVel = c - prevC;
 
-  // Velocity-based fast trigger
-  if (gestureActive && Math.abs(velocity) > 0.15 && state.handPresent) {
-    if (now - state.lastSwingAt > cfg.swingCooldownMs) {
-      const side = velocity > 0 ? "R" : "L";
+  // Smooth velocity separately to detect peaks more robustly
+  const prevVel = state.swingVelocity;
+  state.swingVelocity = prevVel * 0.5 + rawVel * 0.5;
+  const vel = state.swingVelocity;
+
+  const cooldownOk = now - state.lastSwingAt > cfg.swingCooldownMs;
+  const hasSource = state.handPresent || state.centroidValid;
+
+  // 1. Peak/reversal detection: fires at exact moment hand reverses direction.
+  //    When velocity changes sign after exceeding a minimum, the prior direction
+  //    was a complete swing. More sensitive than zone-based for natural waving.
+  if (swingEligible && cooldownOk && hasSource) {
+    const reversed = prevVel * vel < -0.0002;
+    const hadMomentum = Math.abs(prevVel) > 0.04;
+    if (reversed && hadMomentum) {
+      const side: "L" | "R" = prevVel < 0 ? "L" : "R"; // swing peaked in prevVel direction
       if (side !== state.lastSwingSide) {
         state.lastSwingAt = now;
         state.lastSwingSide = side;
@@ -321,19 +343,18 @@ function handleSwing(gestureActive: boolean): void {
       }
     }
   }
-  // Zone-based
+
+  // 2. Zone-based fallback: catches slow wide swings that peak detection misses
   let side: "L" | "R" | null = null;
   if (c < cfg.swingLeftAt) side = "L";
   else if (c > cfg.swingRightAt) side = "R";
-  const canSwing = state.handPresent || state.centroidValid;
-  if (gestureActive && side && side !== state.lastSwingSide && canSwing) {
-    if (now - state.lastSwingAt > cfg.swingCooldownMs) {
-      if (state.lastSwingSide !== null) addPoint(side);
-      state.lastSwingAt = now;
-      state.lastSwingSide = side;
-    }
+  if (swingEligible && side && side !== state.lastSwingSide && hasSource && cooldownOk) {
+    if (state.lastSwingSide !== null) addPoint(side);
+    state.lastSwingAt = now;
+    state.lastSwingSide = side;
   }
-  if (!gestureActive && now - state.lastSwingAt > 1500) state.lastSwingSide = null;
+
+  if (!swingEligible && now - state.lastSwingAt > 1500) state.lastSwingSide = null;
 }
 
 // LRC sync
@@ -451,8 +472,13 @@ async function tickFrame(): Promise<void> {
   const hasHand = state.handPresent || (!state.handsReady && state.centroidValid);
   const gestureActive = hasHand && handMoving && (mouthClosedWithGrace || veryStrongMotion);
 
+  // swingEligible: lebih longgar dari gestureActive — musik gating tetap strict,
+  // tapi scoring tidak memerlukan handMovingLatch sudah engage.
+  // Syarat: ada tangan DAN (mulut tutup / latch sudah aktif / gerakan sangat kuat)
+  const swingEligible = hasHand && (mouthClosedWithGrace || handMoving || veryStrongMotion);
+
   const reason = gestureActive ? "hand+mouth"
-    : !state.handPresent ? "no-hand"
+    : !hasHand ? "no-hand"
     : !handMoving ? "hand-still"
     : !mouthClosedWithGrace ? "mouth-open"
     : "?";
@@ -481,7 +507,7 @@ async function tickFrame(): Promise<void> {
   if (settings.jj) drawFlash(ctx);
   tickEffects();
 
-  handleSwing(gestureActive);
+  handleSwing(gestureActive, swingEligible);
   checkAutoStop();
 
   // UI throttle
@@ -539,6 +565,8 @@ async function start(): Promise<void> {
 
     state.running = true;
     els.stopBtn.disabled = false;
+    els.stopBtn.textContent = "■ STOP";
+    els.stopBtn.style.opacity = "1";
     startSubmitFlush();
 
     void els.catSource.play().catch(() => { /* */ });
@@ -559,6 +587,8 @@ function stop(): void {
   }
   state.running = false;
   els.stopBtn.disabled = true;
+  els.stopBtn.textContent = "■ STOP";
+  els.stopBtn.style.opacity = "1";
   els.startBtn.disabled = false;
   stopCamera();
   audioPlayer.stopAll();
