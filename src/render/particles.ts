@@ -84,8 +84,9 @@ export function spawnCatDance(viewW: number, viewH: number): void {
 }
 
 export function drawCats(ctx: CanvasRenderingContext2D, catSource: HTMLVideoElement, bassNorm: number, dt = 16): void {
-  if (catSource.readyState < 2) return;
-  updateChroma(catSource);
+  // Always draw cats — kalau video chroma belum ready, pakai emoji 🐱 fallback
+  const useChroma = catSource.readyState >= 2;
+  if (useChroma) updateChroma(catSource);
   const sprite = getChromaCanvas();
   const cw = sprite.width || 240;
   const ch = sprite.height || 426;
@@ -113,9 +114,17 @@ export function drawCats(ctx: CanvasRenderingContext2D, catSource: HTMLVideoElem
     ctx.scale(-1, 1);
     ctx.rotate(p.rot);
     ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
-    ctx.shadowColor = "rgba(255,204,0,0.9)";
-    ctx.shadowBlur = 14 + bassNorm * 22;
-    ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
+    ctx.shadowColor = "rgba(255,204,0,0.95)";
+    ctx.shadowBlur = 18 + bassNorm * 26;
+    if (useChroma && sprite.width > 1) {
+      ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
+    } else {
+      // Fallback: 🐱 emoji ukuran sama dengan cat sprite (selalu visible)
+      ctx.font = `${h * 0.85}px "Apple Color Emoji", "Segoe UI Emoji", system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("🐱", 0, 0);
+    }
     ctx.restore();
   }
 }
