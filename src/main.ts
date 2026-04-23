@@ -255,13 +255,12 @@ let submitFlushTimer: ReturnType<typeof setInterval> | null = null;
 const AUTO_STOP_IDLE_MS = 15000;
 const SUBMIT_FLUSH_MS = 5000;        // flush score ke server max tiap 5 detik
 
-function addPoint(side: "L" | "R"): void {
+function addPoint(side: "L" | "R" | "F"): void {
   state.score += 1;
   lastActivityAt = performance.now();
-  flashBigText(side === "L" ? "KICAU ⬅" : "KICAU ➡");
+  flashBigText(side === "L" ? "KICAU ⬅" : side === "R" ? "KICAU ➡" : "KICAU !");
   renderScore();
   bumpPersonalBest(state.score);
-  // TIDAK submit per swing — periodic flush yang handle (tiap 5s kalau berubah)
 }
 
 function startSubmitFlush(): void {
@@ -355,6 +354,42 @@ function handleSwing(gestureActive: boolean, swingEligible: boolean): void {
   }
 
   if (!swingEligible && now - state.lastSwingAt > 1500) state.lastSwingSide = null;
+}
+
+// Forward swing via hand scale change (wrist↔middleMCP distance as depth proxy).
+// Tangan maju ke kamera → ukuran tangan di frame membesar → scale naik di atas baseline.
+const SCALE_ON  = 1.20;  // naik 20% dari baseline = maju
+const SCALE_OFF = 1.06;  // turun kembali ke 6% = swing selesai
+const SCALE_FWD_COOLDOWN_MS = 500;
+let lastForwardSwingAt = 0;
+
+function handleForwardSwing(swingEligible: boolean): void {
+  if (!state.handPresent || state.handScaleRaw === 0) return;
+
+  // Init baseline di frame pertama
+  if (state.handScaleBaseline === 0) {
+    state.handScaleBaseline = state.handScaleRaw;
+    state.handScaleFast = state.handScaleRaw;
+    return;
+  }
+  // EMA cepat (respons ke gerakan)
+  state.handScaleFast = state.handScaleFast * 0.5 + state.handScaleRaw * 0.5;
+  // EMA sangat lambat (baseline = ukuran tangan normal user di jarak game)
+  state.handScaleBaseline = state.handScaleBaseline * 0.985 + state.handScaleRaw * 0.015;
+
+  const ratio = state.handScaleFast / state.handScaleBaseline;
+
+  if (!state.handScaleForwardLatch && ratio > SCALE_ON) {
+    state.handScaleForwardLatch = true;
+  }
+  if (state.handScaleForwardLatch && ratio < SCALE_OFF) {
+    state.handScaleForwardLatch = false;
+    const now = performance.now();
+    if (swingEligible && now - lastForwardSwingAt > SCALE_FWD_COOLDOWN_MS) {
+      lastForwardSwingAt = now;
+      addPoint("F");
+    }
+  }
 }
 
 // LRC sync
@@ -508,6 +543,7 @@ async function tickFrame(): Promise<void> {
   tickEffects();
 
   handleSwing(gestureActive, swingEligible);
+  handleForwardSwing(swingEligible);
   checkAutoStop();
 
   // UI throttle
@@ -516,7 +552,8 @@ async function tickFrame(): Promise<void> {
     const cShow = state.smoothedCentroid.toFixed(2);
     const zone = state.smoothedCentroid < cfg.swingLeftAt ? "⬅"
       : state.smoothedCentroid > cfg.swingRightAt ? "➡" : "·";
-    els.pitchValue.textContent = `c=${cShow} ${zone} ${state.handSource} (${state.lastSwingSide || "-"})`;
+    const scaleRatio = state.handScaleBaseline > 0 ? (state.handScaleFast / state.handScaleBaseline).toFixed(2) : "-";
+    els.pitchValue.textContent = `c=${cShow} ${zone} ${state.handSource} (${state.lastSwingSide || "-"}) fwd=${scaleRatio}${state.handScaleForwardLatch ? "!" : ""}`;
     if (det) {
       els.exprValue.textContent = (mouthClosed ? "🤐" : "👄") +
         " (" + (Math.round(state.smoothedMouthGap * 1000) / 10) + "%)";
@@ -561,6 +598,10 @@ async function start(): Promise<void> {
     lastLyricTriggered = -1;
     lastActivityAt = 0;
     lastSubmittedScore = 0;
+    lastForwardSwingAt = 0;
+    state.handScaleBaseline = 0;
+    state.handScaleFast = 0;
+    state.handScaleForwardLatch = false;
     renderScore();
 
     state.running = true;

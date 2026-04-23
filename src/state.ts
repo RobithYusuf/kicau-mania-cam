@@ -45,10 +45,16 @@ export const state = {
   handSource: "none" as "mp" | "motion" | "none",
   handsReady: false,
 
-  // Swing
+  // Swing lateral
   lastSwingSide: null as "L" | "R" | null,
   lastSwingAt: 0,
-  swingVelocity: 0,        // smoothed velocity for peak detection
+  swingVelocity: 0,
+
+  // Swing forward (depth via hand scale)
+  handScaleRaw: 0,         // dist(wrist, middleMCP) — proxy ukuran tangan di frame
+  handScaleFast: 0,        // EMA cepat (respons ke gerakan)
+  handScaleBaseline: 0,    // EMA lambat (baseline ukuran normal tangan user)
+  handScaleForwardLatch: false,
 
   // Audio + beat
   bassAvg: 0,

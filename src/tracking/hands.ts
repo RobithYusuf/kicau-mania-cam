@@ -33,17 +33,23 @@ function onResults(results: MpResults): void {
     state.handPresent = false;
     return;
   }
-  let bestDist = -1, bestX: number | null = null;
+  let bestDist = -1, bestX: number | null = null, bestScale = 0;
   for (const lm of list) {
     const palm = lm[9]!;
     const distFromCenter = Math.abs(palm.x - 0.5);
     if (distFromCenter > bestDist) {
       bestDist = distFromCenter;
       bestX = palm.x;
+      // Hand scale: jarak wrist(0) ke middle_finger_mcp(9) di image coords
+      // Makin besar = tangan makin dekat ke kamera (maju)
+      const wrist = lm[0]!;
+      const dx = wrist.x - palm.x, dy = wrist.y - palm.y;
+      bestScale = Math.sqrt(dx * dx + dy * dy);
     }
   }
   if (bestX !== null) {
     state.handX = 1 - bestX;
+    state.handScaleRaw = bestScale;
     state.handPresent = true;
     state.handLastSeenAt = performance.now();
     state.handSource = "mp";
