@@ -9,7 +9,7 @@ import { detectBeat } from "./audio/beat";
 import { loadLRC } from "./audio/lrc";
 import { spawnLyric, spawnCatDance, drawCats, drawLyrics, particles, catParticles } from "./render/particles";
 import { triggerJJ, applyShake, drawFlash, tickEffects, setBigTextEl, flashBigText } from "./render/effects";
-import { initSupabase, detectIP, submitGlobalScore } from "./leaderboard/supabase";
+import { initSupabase, detectIP, submitGlobalScore, fetchMyEntry } from "./leaderboard/supabase";
 import { setupLeaderboardModal } from "./leaderboard/modal";
 import type { LyricEntry } from "./types";
 
@@ -167,9 +167,33 @@ loadLRC("./audio/kicau-mania.lrc").then((tl) => {
 
 // Supabase + IP
 initSupabase();
-detectIP().then((ip) => {
-  if (!playerNameNav.value && ip) {
-    playerNameNav.placeholder = `user_${ip.split(".").slice(-2).join(".")}`;
+// Auto-sync nama + best dari Supabase berdasarkan IP — supaya device baru tidak
+// tampil sebagai "user baru" kalau IP-nya sudah pernah submit skor
+detectIP().then(async (ip) => {
+  if (!ip) return;
+  playerNameNav.placeholder = `user_${ip.split(".").slice(-2).join(".")}`;
+  // Cek apakah IP ini sudah punya entry di server
+  const myEntry = await fetchMyEntry();
+  if (!myEntry) return;
+
+  const localName = (localStorage.getItem(NAME_KEY) || "").trim();
+  const localBest = parseInt(localStorage.getItem(BEST_KEY) || "0", 10);
+
+  // Sync nama: kalau local kosong ATAU server lebih recent dari local best, pakai server
+  if (!localName && myEntry.name) {
+    playerNameNav.value = myEntry.name;
+    localStorage.setItem(NAME_KEY, myEntry.name);
+    setSaveStatus("saved");
+  }
+  // Sync best score: pakai max(local, server)
+  if (myEntry.score > localBest) {
+    personalBest = myEntry.score;
+    localStorage.setItem(BEST_KEY, String(myEntry.score));
+    renderPersonalBest();
+  }
+  // Tampilkan ke status info bahwa data ter-sync
+  if (myEntry.name && (myEntry.name === playerNameNav.value || !localName)) {
+    flashBigText(`👋 Halo lagi, ${myEntry.name}!`, 2000);
   }
 });
 

@@ -65,6 +65,22 @@ export interface GlobalLeaderboard {
   topScore: number;
 }
 
+/** Fetch entry milik IP saat ini (untuk sync ke device baru) */
+export interface MyEntry { name: string; score: number; updated_at: string; }
+export async function fetchMyEntry(): Promise<MyEntry | null> {
+  if (!supa) return null;
+  const ip = userIP || "anon";
+  try {
+    const { data, error } = await supa.rpc("get_my_entry", { p_ip: ip });
+    if (error) throw error;
+    if (!data || (data as MyEntry[]).length === 0) return null;
+    return (data as MyEntry[])[0]!;
+  } catch (e) {
+    console.warn("[SUPA] fetchMyEntry failed:", (e as Error).message || e);
+    return null;
+  }
+}
+
 export async function fetchGlobal(limit = 50): Promise<GlobalLeaderboard | null> {
   if (!supa) return null;
   try {
