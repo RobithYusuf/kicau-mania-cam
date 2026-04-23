@@ -9,6 +9,7 @@ import { detectBeat } from "./audio/beat";
 import { loadLRC } from "./audio/lrc";
 import { spawnLyric, spawnCatDance, drawCats, drawLyrics, particles, catParticles } from "./render/particles";
 import { triggerJJ, applyShake, drawFlash, tickEffects, setBigTextEl, flashBigText } from "./render/effects";
+import { updateChroma, getChromaCanvas } from "./render/chroma";
 import { initSupabase, detectIP, submitGlobalScore, fetchMyEntry } from "./leaderboard/supabase";
 import { setupLeaderboardModal } from "./leaderboard/modal";
 import type { LyricEntry } from "./types";
@@ -363,10 +364,7 @@ function onLyricTrigger(text: string, durationSec: number): void {
   const viewW = els.overlay.width || 1280;
   const viewH = els.overlay.height || 720;
   if (settings.lyric) {
-    // Canvas particle (animated, banyak posisi)
     spawnLyric(text, durationSec, viewW, viewH);
-    // DOM fallback (guaranteed visible — pakai bigText element absolute)
-    flashBigText(text, Math.max(700, durationSec * 1000 * 0.9));
   }
   if (settings.cat) {
     const n = 3 + Math.floor(Math.random() * 3);
@@ -396,12 +394,15 @@ async function tick(): Promise<void> {
 }
 
 async function tickFrame(): Promise<void> {
-  // Face detect + render frame siap parallel
+  // Mulai face detect dulu (async), baru clear+draw setelah selesai
+  // supaya clearRect dan drawCats terjadi dalam frame yang sama — tidak ada
+  // celah di mana browser paint canvas kosong tanpa animasi.
   const detPromise = detectFace(els.video).catch(() => null);
+  const det = await detPromise;
+
   const ctx = els.overlay.getContext("2d")!;
   syncCanvasSize();
   ctx.clearRect(0, 0, els.overlay.width, els.overlay.height);
-  const det = await detPromise;
 
   let mouthClosed = false;
   const nowMs = performance.now();
@@ -443,8 +444,9 @@ async function tickFrame(): Promise<void> {
   const handMoving = state.handMovingLatch;
   const veryStrongMotion = state.smoothedMotion > cfg.motionOnAt * 2.5;
 
-  // Strict gesture: WAJIB hand present (block head-only false positive)
-  const gestureActive = state.handPresent && handMoving && (mouthClosedWithGrace || veryStrongMotion);
+  // Kalau MediaPipe Hands tidak tersedia, fallback ke centroid motion (face area sudah dikecualikan)
+  const hasHand = state.handPresent || (!state.handsReady && state.centroidValid);
+  const gestureActive = hasHand && handMoving && (mouthClosedWithGrace || veryStrongMotion);
 
   const reason = gestureActive ? "hand+mouth"
     : !state.handPresent ? "no-hand"
@@ -452,9 +454,7 @@ async function tickFrame(): Promise<void> {
     : !mouthClosedWithGrace ? "mouth-open"
     : "?";
 
-  // Musik LANGSUNG play setelah MULAI (tidak nunggu gesture) → animasi & lirik
-  // selalu sinkron berjalan. Gesture hanya untuk scoring kicau swing.
-  if (settings.music) audioPlayer.drive(state.running, reason);
+  if (settings.music) audioPlayer.drive(handMoving || gestureActive, reason);
   else audioPlayer.drive(false, "music-toggle-off");
 
   if (gestureActive && !state.gesturePrev) flashBigText("KICAU MANIA");
@@ -462,6 +462,12 @@ async function tickFrame(): Promise<void> {
 
   detectBeat();
   tickLyricSync();
+
+  // Kalau musik berhenti (user diam), langsung hapus semua partikel
+  if (!audioPlayer.isPlaying()) {
+    particles.length = 0;
+    catParticles.length = 0;
+  }
 
   // Render
   ctx.save();
@@ -502,6 +508,7 @@ async function tickFrame(): Promise<void> {
 
 // Lifecycle — semua resource di-load PARALLEL via Promise.all (no sequential await)
 async function start(): Promise<void> {
+  stopIdle();
   els.startBtn.disabled = true;
   els.loading.classList.remove("hidden");
 
@@ -531,7 +538,6 @@ async function start(): Promise<void> {
     els.stopBtn.disabled = false;
     startSubmitFlush();
 
-    // Cat source play fire-and-forget (tidak block tick)
     void els.catSource.play().catch(() => { /* */ });
     void tick();
   } catch (e) {
@@ -556,19 +562,87 @@ function stop(): void {
   els.catSource.pause();
   particles.length = 0;
   catParticles.length = 0;
+  startIdle();
 }
+
+// Idle preview — ghost cat video (chroma) sebelum session mulai
+interface IdlePos { x: number; y: number; bob: number; bobSpeed: number; }
+const idlePositions: IdlePos[] = [];
+let idleRunning = false;
+let idleRaf = 0;
+
+function initIdlePositions(cw: number, ch: number): void {
+  idlePositions.length = 0;
+  const pts = [{ x: 0.15, y: 0.55 }, { x: 0.5, y: 0.38 }, { x: 0.82, y: 0.58 }];
+  for (const p of pts) {
+    idlePositions.push({ x: cw * p.x, y: ch * p.y, bob: Math.random() * Math.PI * 2, bobSpeed: 0.01 + Math.random() * 0.008 });
+  }
+}
+
+function tickIdle(): void {
+  if (!idleRunning) return;
+  const canvas = els.overlay;
+  const ctx = canvas.getContext("2d")!;
+  const rect = canvas.getBoundingClientRect();
+  const rw = Math.round(rect.width) || 640;
+  const rh = Math.round(rect.height) || 360;
+  if (canvas.width !== rw || canvas.height !== rh) {
+    canvas.width = rw; canvas.height = rh;
+    initIdlePositions(rw, rh);
+  }
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const src = els.catSource;
+  if (src.readyState >= 2) {
+    updateChroma(src);
+    const sprite = getChromaCanvas();
+    if (sprite.width > 1) {
+      const catH = canvas.height * 0.42;
+      const catW = sprite.width * (catH / sprite.height);
+      for (const p of idlePositions) {
+        p.bob += p.bobSpeed;
+        const bobY = Math.sin(p.bob) * (canvas.height * 0.022);
+        const pulse = 1 + Math.sin(p.bob * 1.6) * 0.04;
+        ctx.save();
+        ctx.globalAlpha = 0.2;
+        ctx.translate(canvas.width - p.x, p.y + bobY);
+        ctx.scale(-1, 1);
+        ctx.drawImage(sprite, -catW * pulse / 2, -catH * pulse / 2, catW * pulse, catH * pulse);
+        ctx.restore();
+      }
+    }
+  }
+  idleRaf = requestAnimationFrame(tickIdle);
+}
+
+function startIdle(): void {
+  if (idleRunning) return;
+  idleRunning = true;
+  void els.catSource.play().catch(() => { /* */ });
+  const rect = els.overlay.getBoundingClientRect();
+  initIdlePositions(Math.round(rect.width) || 640, Math.round(rect.height) || 360);
+  tickIdle();
+}
+
+function stopIdle(): void {
+  idleRunning = false;
+  cancelAnimationFrame(idleRaf);
+  const ctx = els.overlay.getContext("2d");
+  ctx?.clearRect(0, 0, els.overlay.width, els.overlay.height);
+}
+
+startIdle();
 
 els.startBtn.addEventListener("click", () => { void start(); });
 els.stopBtn.addEventListener("click", stop);
 
-// Debug helper — inspect app internal state via console
-(window as unknown as { KM: object }).KM = {
-  state, settings, particles, catParticles,
-  get audio() { return { isPlaying: audioPlayer.isPlaying(), currentTime: audioPlayer.currentTime() }; },
-  get lrc() { return { count: LYRIC_TIMELINE.length, cursor: lyricCursor, lastTriggered: lastLyricTriggered, lastAudioT }; },
-  get camera() { return { state: camState, srcObj: !!els.video.srcObject, vw: els.video.videoWidth }; },
-  forceSpawn() {
-    onLyricTrigger("KICAU", 0.5);
-    return "spawned";
-  },
-};
+// Debug helper — hanya tersedia di dev mode (import.meta.env.DEV)
+if (import.meta.env.DEV) {
+  (window as unknown as { KM: object }).KM = {
+    state, settings, particles, catParticles,
+    get audio() { return { isPlaying: audioPlayer.isPlaying(), currentTime: audioPlayer.currentTime() }; },
+    get lrc() { return { count: LYRIC_TIMELINE.length, cursor: lyricCursor, lastTriggered: lastLyricTriggered, lastAudioT }; },
+    get camera() { return { state: camState, srcObj: !!els.video.srcObject, vw: els.video.videoWidth }; },
+    forceSpawn() { onLyricTrigger("KICAU", 0.5); return "spawned"; },
+  };
+}

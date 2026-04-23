@@ -126,12 +126,12 @@
 
   .big-text {
     @apply absolute left-1/2 font-black text-white whitespace-nowrap pointer-events-none z-10;
-    top: 8%;
+    top: 4%;
     transform: translate(-50%, 0);
-    font-size: clamp(16px, 2.8vw, 32px);
-    text-shadow: 0 0 8px var(--color-accent), 0 0 16px var(--color-accent-2), 2px 2px 0 #000;
+    font-size: clamp(14px, 2.4vw, 28px);
+    text-shadow: 0 0 8px var(--color-accent), 0 0 14px var(--color-accent-2), 2px 2px 0 #000;
     letter-spacing: 1.5px;
-    animation: km-pulse 0.3s ease-out;
+    animation: km-pulse 0.25s ease-out;
   }
 
   .loading {

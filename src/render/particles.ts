@@ -50,7 +50,6 @@ export function spawnLyric(text: string, durationSec: number, viewW: number, vie
   particles.push({
     text, color, fontSize, x, y,
     life: 0,
-    // Min 800ms — supaya cukup terlihat user sebelum hilang
     maxLife: Math.max(800, durationSec * 1000 * 1.2),
     rot: (Math.random() - 0.5) * 0.18,
     popScale: 1.3,
@@ -75,7 +74,6 @@ export function spawnCatDance(viewW: number, viewH: number): void {
   catParticles.push({
     x, y, scale,
     life: 0,
-    // Lebih lama: 1.8–3 detik per kucing supaya kelihatan jelas
     maxLife: 1800 + Math.random() * 1200,
     rot: (Math.random() - 0.5) * 0.2,
     bob: Math.random() * Math.PI * 2,
@@ -84,7 +82,6 @@ export function spawnCatDance(viewW: number, viewH: number): void {
 }
 
 export function drawCats(ctx: CanvasRenderingContext2D, catSource: HTMLVideoElement, bassNorm: number, dt = 16): void {
-  // Always draw cats — kalau video chroma belum ready, pakai emoji 🐱 fallback
   const useChroma = catSource.readyState >= 2;
   if (useChroma) updateChroma(catSource);
   const sprite = getChromaCanvas();
@@ -119,7 +116,6 @@ export function drawCats(ctx: CanvasRenderingContext2D, catSource: HTMLVideoElem
     if (useChroma && sprite.width > 1) {
       ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
     } else {
-      // Fallback: 🐱 emoji ukuran sama dengan cat sprite (selalu visible)
       ctx.font = `${h * 0.85}px "Apple Color Emoji", "Segoe UI Emoji", system-ui`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
