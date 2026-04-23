@@ -568,18 +568,32 @@ function stop(): void {
   startIdle();
 }
 
-// Idle preview — ghost cat video (chroma) sebelum session mulai
+// Idle preview — cat breathing loop: fade-in → hold → fade-out → pause → repeat
+// Fase (ms): 0..800 fade-in | 800..2800 hold | 2800..3600 fade-out | 3600..5200 pause
+const IDLE_PHASE = { fadeIn: 800, hold: 2000, fadeOut: 800, pause: 1600 };
+const IDLE_CYCLE = IDLE_PHASE.fadeIn + IDLE_PHASE.hold + IDLE_PHASE.fadeOut + IDLE_PHASE.pause; // 5200ms
+
 interface IdlePos { x: number; y: number; bob: number; bobSpeed: number; }
 const idlePositions: IdlePos[] = [];
 let idleRunning = false;
 let idleRaf = 0;
+let idleStartMs = 0;
 
 function initIdlePositions(cw: number, ch: number): void {
   idlePositions.length = 0;
   const pts = [{ x: 0.15, y: 0.55 }, { x: 0.5, y: 0.38 }, { x: 0.82, y: 0.58 }];
   for (const p of pts) {
-    idlePositions.push({ x: cw * p.x, y: ch * p.y, bob: Math.random() * Math.PI * 2, bobSpeed: 0.01 + Math.random() * 0.008 });
+    idlePositions.push({ x: cw * p.x, y: ch * p.y, bob: Math.random() * Math.PI * 2, bobSpeed: 0.012 + Math.random() * 0.008 });
   }
+}
+
+function idleAlpha(nowMs: number): number {
+  const elapsed = (nowMs - idleStartMs) % IDLE_CYCLE;
+  const { fadeIn, hold, fadeOut } = IDLE_PHASE;
+  if (elapsed < fadeIn)                      return elapsed / fadeIn;
+  if (elapsed < fadeIn + hold)               return 1;
+  if (elapsed < fadeIn + hold + fadeOut)     return 1 - (elapsed - fadeIn - hold) / fadeOut;
+  return 0; // pause
 }
 
 function tickIdle(): void {
@@ -595,23 +609,26 @@ function tickIdle(): void {
   }
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  const src = els.catSource;
-  if (src.readyState >= 2) {
-    updateChroma(src);
-    const sprite = getChromaCanvas();
-    if (sprite.width > 1) {
-      const catH = canvas.height * 0.42;
-      const catW = sprite.width * (catH / sprite.height);
-      for (const p of idlePositions) {
-        p.bob += p.bobSpeed;
-        const bobY = Math.sin(p.bob) * (canvas.height * 0.022);
-        const pulse = 1 + Math.sin(p.bob * 1.6) * 0.04;
-        ctx.save();
-        ctx.globalAlpha = 0.2;
-        ctx.translate(canvas.width - p.x, p.y + bobY);
-        ctx.scale(-1, 1);
-        ctx.drawImage(sprite, -catW * pulse / 2, -catH * pulse / 2, catW * pulse, catH * pulse);
-        ctx.restore();
+  const alpha = idleAlpha(performance.now());
+  if (alpha > 0) {
+    const src = els.catSource;
+    if (src.readyState >= 2) {
+      updateChroma(src);
+      const sprite = getChromaCanvas();
+      if (sprite.width > 1) {
+        const catH = canvas.height * 0.42;
+        const catW = sprite.width * (catH / sprite.height);
+        for (const p of idlePositions) {
+          p.bob += p.bobSpeed;
+          const bobY = Math.sin(p.bob) * (canvas.height * 0.022);
+          const pulse = 1 + Math.sin(p.bob * 1.6) * 0.04;
+          ctx.save();
+          ctx.globalAlpha = alpha * 0.85; // max 85% opacity — tidak full agar terasa "preview"
+          ctx.translate(canvas.width - p.x, p.y + bobY);
+          ctx.scale(-1, 1);
+          ctx.drawImage(sprite, -catW * pulse / 2, -catH * pulse / 2, catW * pulse, catH * pulse);
+          ctx.restore();
+        }
       }
     }
   }
@@ -621,6 +638,7 @@ function tickIdle(): void {
 function startIdle(): void {
   if (idleRunning) return;
   idleRunning = true;
+  idleStartMs = performance.now();
   void els.catSource.play().catch(() => { /* */ });
   const rect = els.overlay.getBoundingClientRect();
   initIdlePositions(Math.round(rect.width) || 640, Math.round(rect.height) || 360);
