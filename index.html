@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Kicau Mania Cam — Face Tracking Dance Challenge</title>
+  <link rel="icon" href="data:," />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-row">
+      <h1 class="brand">
+        <span class="brand-dot"></span> KICAU MANIA <span class="brand-tag">CAM</span>
+      </h1>
+      <nav class="nav-actions">
+        <button id="navLeaderboard" class="nav-btn" title="Leaderboard">🏆 Leaderboard</button>
+      </nav>
+    </div>
+    <div class="brand-sub">Goyangkan tangan kiri ↔ kanan ikut beat. Tiap swing = +1 poin.</div>
+  </header>
+
+  <main class="stage">
+    <div class="video-wrap">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="overlay"></canvas>
+      <div id="bigText" class="big-text hidden">GAS POL NDANGAK</div>
+      <div id="loading" class="loading">
+        <div class="loader"></div>
+        <p>Memuat model face tracking...</p>
+      </div>
+      <div id="permissionHint" class="permission-hint hidden">Izinkan akses kamera untuk mulai.</div>
+      <div id="hudScore" class="hud-score">
+        <span class="hud-label">SKOR</span>
+        <span id="hudScoreVal" class="hud-value">0</span>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <div class="card">
+        <div class="row-flex">
+          <div>
+            <div class="muted-label">PEMAIN</div>
+            <input id="playerName" class="name-input" placeholder="Nama kamu" maxlength="20" />
+          </div>
+          <button id="leaderboardBtn" class="btn-icon" title="Leaderboard">🏆</button>
+        </div>
+      </div>
+
+      <div class="card status-card">
+        <div class="row"><span>Wajah</span><b id="faceStatus">—</b></div>
+        <div class="row"><span>Swing ⬅➡</span><b id="pitchValue">—</b></div>
+        <div class="row"><span>Ekspresi</span><b id="expressionValue">—</b></div>
+        <div class="row"><span>Gesture</span><b id="comboValue">—</b></div>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" class="btn btn-primary">▶ MULAI</button>
+        <button id="stopBtn" class="btn btn-ghost" disabled>■ STOP</button>
+      </div>
+
+      <div class="card collapsible" id="settingsCard">
+        <div class="card-head" data-toggle="settings">
+          <span>⚙ Pengaturan</span><span class="caret">▾</span>
+        </div>
+        <div class="card-body">
+          <label class="toggle"><input type="checkbox" id="optLyric" checked><span>Lirik subtitle</span></label>
+          <label class="toggle"><input type="checkbox" id="optCat" checked><span>Animasi kucing</span></label>
+          <label class="toggle"><input type="checkbox" id="optJJ" checked><span>Efek JJ (shake + flash)</span></label>
+          <label class="toggle"><input type="checkbox" id="optMusic" checked><span>Audio musik</span></label>
+          <label class="toggle"><input type="checkbox" id="optDebug"><span>Debug log (console)</span></label>
+        </div>
+      </div>
+
+      <div class="hint card">
+        <p><b>Cara main:</b></p>
+        <ol>
+          <li>Isi nama, klik <b>MULAI</b>, izinkan kamera.</li>
+          <li>Tunjukkan <b>tangan</b> ✋ ke kamera.</li>
+          <li>Tutup mulut 🤐 + swing tangan kiri↔kanan = <b>+1 poin</b> per swing.</li>
+          <li>Stop → skor tersimpan ke leaderboard.</li>
+        </ol>
+      </div>
+    </aside>
+  </main>
+
+  <div id="leaderboardModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-head">
+        <h2>🏆 Leaderboard</h2>
+        <button class="btn-icon" id="closeLeaderboard">✕</button>
+      </div>
+      <div class="lb-tabs">
+        <button id="tabLocal"  class="tab-btn active">📁 Local</button>
+        <button id="tabGlobal" class="tab-btn">🌐 Global (live)</button>
+      </div>
+      <ol id="leaderboardList" class="lb-list"></ol>
+      <div class="modal-actions">
+        <button id="exportLb" class="btn btn-ghost">⬇ Export JSON</button>
+        <button id="clearLb" class="btn btn-ghost">🗑 Hapus Local</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="foot">
+    <div class="foot-credits">
+      <span>Made with 🐦 by <a href="https://github.com/robithyusuf" target="_blank" rel="noopener">@robithyusuf</a> · Open source MIT</span>
+      <a class="saweria-btn" href="https://saweria.co/robithyusuf" target="_blank" rel="noopener" title="Dukung dengan saweria">
+        ☕ Sawer
+      </a>
+    </div>
+  </footer>
+
+  <audio id="bgMusic" src="/audio/kicau-mania.mp3" preload="auto"></audio>
+  <video id="catSource" src="/assets/cat-dance.mp4" muted loop playsinline preload="auto" style="display:none"></video>
+
+  <!-- MediaPipe Hands butuh global variable Hands, jadi via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+# Build output
+dist/
+*.local
+
+# Env vars (contains Supabase keys)
+.env
+.env.local
+.env.*.local
+js/config.js
+
+# Audio berhak cipta — user download via download-audio.sh
+public/audio/*.mp3
+audio/*.mp3
+audio/*-backup-*
+audio/*-v[0-9]*.mp3
+
+# Backup pre-migration
+.backup-pre-vite/
+
+# Deps
+node_modules/
+
+# OS / editor
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# Vercel
+.vercel
